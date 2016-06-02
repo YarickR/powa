@@ -1,0 +1,1 @@
+Included here are a couple examples from the "Painted 2D Location Hexes: Medieval-Fantasy" set. If you like what you see, you should buy the whole set!

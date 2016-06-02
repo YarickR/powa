@@ -1,0 +1,13 @@
+fileFormatVersion: 2
+guid: 97f69cdc94d924ecc9f406a8e6e5b0e6
+timeCreated: 1461279974
+licenseType: Free
+MonoImporter:
+  serializedVersion: 2
+  defaultReferences:
+  - groundTile: {fileID: 21300000, guid: 256ebeea05fcee74494dd7350e6af91e, type: 3}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

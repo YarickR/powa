@@ -1,0 +1,17 @@
+/Users/Yarick/Work/PoWa/PoWa/Temp/bin/Debug/Assembly-CSharp-firstpass.dll.mdb
+/Users/Yarick/Work/PoWa/PoWa/Temp/bin/Debug/Assembly-CSharp-firstpass.dll
+/Users/Yarick/Work/PoWa/PoWa/obj/Debug/Assembly-CSharp-firstpass.dll
+/Users/Yarick/Work/PoWa/PoWa/obj/Debug/Assembly-CSharp-firstpass.dll.mdb
+/Users/Yarick/Work/PoWa/PoWa/Temp/bin/Debug/UnityEngine.dll
+/Users/Yarick/Work/PoWa/PoWa/Temp/bin/Debug/UnityEditor.dll
+/Users/Yarick/Work/PoWa/PoWa/Temp/bin/Debug/UnityEngine.Networking.dll
+/Users/Yarick/Work/PoWa/PoWa/Temp/bin/Debug/UnityEngine.UI.dll
+/Users/Yarick/Work/PoWa/PoWa/Temp/bin/Debug/Mono.Cecil.dll
+/Users/Yarick/Work/PoWa/PoWa/Temp/bin/Debug/Unity.SerializationLogic.dll
+/Users/Yarick/Work/PoWa/PoWa/Temp/bin/Debug/Unity.DataContract.dll
+/Users/Yarick/Work/PoWa/PoWa/Temp/bin/Debug/ICSharpCode.NRefactory.dll
+/Users/Yarick/Work/PoWa/PoWa/Temp/bin/Debug/Unity.UNetWeaver.dll
+/Users/Yarick/Work/PoWa/PoWa/Temp/bin/Debug/Unity.UNetWeaver.dll.mdb
+/Users/Yarick/Work/PoWa/PoWa/Temp/bin/Debug/Unity.CecilTools.dll
+/Users/Yarick/Work/PoWa/PoWa/Temp/bin/Debug/Mono.Cecil.Pdb.dll
+/Users/Yarick/Work/PoWa/PoWa/Temp/bin/Debug/Mono.Cecil.Mdb.dll
