@@ -6,7 +6,7 @@
     <ProductVersion>10.0.20506</ProductVersion>
     <SchemaVersion>2.0</SchemaVersion>
     <RootNamespace></RootNamespace>
-    <ProjectGuid>{85C04DE9-5098-7DDD-A240-0A0C7509C28E}</ProjectGuid>
+    <ProjectGuid>{12F44184-A422-5F27-22E6-507969043F15}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <AssemblyName>Assembly-CSharp</AssemblyName>
@@ -48,10 +48,12 @@
      <Compile Include="Assets\Bullet.cs" />
      <Compile Include="Assets\GCTX.cs" />
      <Compile Include="Assets\HexTile.cs" />
+     <Compile Include="Assets\Lobby.cs" />
      <Compile Include="Assets\MainInit.cs" />
      <Compile Include="Assets\PConst.cs" />
      <Compile Include="Assets\PPlayer.cs" />
      <Compile Include="Assets\PPoint.cs" />
+     <Compile Include="Assets\SimpleJSON.cs" />
      <Compile Include="Assets\Singleton.cs" />
      <Compile Include="Assets\UIScripts.cs" />
      <Compile Include="Assets\UnitStats.cs" />
@@ -71,7 +73,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="Assembly-CSharp-firstpass.csproj">
-      <Project>{C97C63AE-E45B-B480-53E8-BCDC753A141E}</Project>      <Name>Assembly-CSharp-firstpass</Name>    </ProjectReference>
+      <Project>{079D398E-4AFC-CD7E-7881-F923D075EBD1}</Project>      <Name>Assembly-CSharp-firstpass</Name>    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

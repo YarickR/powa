@@ -9,6 +9,7 @@ public class GCTX : Singleton<GCTX> {
 
 	public HexTile[,] FieldCells;
 	public List<PPlayer> Players;
+	public PPlayer User;
 	public int UserId;
 	public int CurrentMovePlayerId;
 	public GameObject SelectedVehicle, MovingVehicle, ShootingVehicle;
@@ -39,6 +40,70 @@ public class GCTX : Singleton<GCTX> {
 		} while (__counter-- > 0);
 		return ret;
 	}
+
+	public void SetupMatch() {
+	/*
+		if (FieldCells == null) {
+			FieldCells = new HexTile[PConst.Map_Size, PConst.Map_Size];
+		};
+		Sprite[] __hexTiles = Resources.LoadAll<Sprite>("Terrain");
+		for (int __h = 0; __h < PConst.Map_Size; __h++) {
+			for (int __w = 0; __w < PConst.Map_Size; __w++) {
+				HexTile __t;
+				Vector3 __v = new Vector3(Vehicle.rect2hexX(__w, __h), (float)(__h * 0.01), Vehicle.rect2hexY(__w, __h));
+				__t = ( HexTile)Instantiate(hexTile,  __v, Quaternion.Euler(90, 0, 0));
+
+				if (UnityEngine.Random.Range (0, 100) < 30) {
+					__t.Type = UnityEngine.Random.Range (PConst.TType_Desert, PConst.TType_Marsh + 1);
+				} else
+					if (UnityEngine.Random.Range (0, 100) < 20) {
+					__t.Type = PConst.TType_Mountain;
+				} else {
+					__t.Type = PConst.TType_Plain;
+				};
+				__t.GetComponent<SpriteRenderer> ().sprite = __hexTiles [(__t.Type * 4) + UnityEngine.Random.Range(0, 4)];
+				__t.X = __w;
+				__t.Y = __h;
+				FieldCells [__h, __w] = __t;
+			};
+		};
+		Players = new List<PPlayer>();
+		ctx.UserId = UnityEngine.Random.Range(0, PConst.Max_Players);
+		for (int __i = 0; __i < PConst.Max_Players; __i++) {
+			ctx.Players.Add(new PPlayer (50, __i, __i == ctx.UserId ? Color.blue : Color.red ));
+		};
+
+		string[] __prefabNames = new string[5] {"", "Vehicle_Light", "Vehicle_LightRanged", "Vehicle_Medium", "Vehicle_MediumRanged"};
+		int [,] __corners = new int[4,4] { 	{1, 4, 1, 4}, 
+											{PConst.Map_Size - 5, PConst.Map_Size -1, PConst.Map_Size - 5, PConst.Map_Size -1}, 
+											{PConst.Map_Size - 5, PConst.Map_Size -1, 1, 4}, 
+											{ 1, 4, PConst.Map_Size - 5, PConst.Map_Size -1}};
+		foreach (PPlayer __p in ctx.Players) {
+			for (int __i = PConst.VType_Light ; __i <= PConst.VType_MediumRanged ; __i++) {
+				string __pfName = __p.PlayerId == ctx.UserId ? __prefabNames[__i] + "Blue" : __prefabNames[__i] + "Red"; 
+				GameObject __prefab = Resources.Load<GameObject>(__pfName);
+				GameObject __vh = (GameObject)Instantiate(__prefab, new Vector3(0, 0, 0), Quaternion.identity); 
+				Vehicle __vhl = __vh.GetComponent<Vehicle>();
+				__vhl.Type = __i;
+				__vhl.PlayerId = __p.PlayerId;
+				__vhl.Id = __p.Units.Count;
+				__p.Units.Add(__vh);
+
+				PPoint __freeCell;
+				__freeCell = ctx.FindFreeCell(	__corners[ __p.PlayerId, 0], 
+												__corners[ __p.PlayerId, 1], 
+												__corners[ __p.PlayerId, 2], 
+												__corners[ __p.PlayerId, 3]);
+				if (__freeCell.X == -1) {
+					break;
+				};
+				__vhl.MoveTo(__freeCell.X, __freeCell.Y);
+			};
+		};
+		ctx.PassTheMove(0, false);
+		*/
+	}
+
 	public void EndTurn() {
 		int __i, __p;
 		for (__p = 0; __p < Players.Count; __p++) {

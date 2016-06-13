@@ -26,5 +26,6 @@
 	public const int EOT_Soft		= 1;
 	public const int EOT_Hard		= 2;
 	public const int Move_Time		= 15;
+	public const string Server_URL  = "http://powa.ext.terrhq.ru";
 }
 
