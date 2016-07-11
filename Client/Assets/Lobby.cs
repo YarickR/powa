@@ -28,6 +28,7 @@ public class Lobby : MonoBehaviour {
 	}
 
 	IEnumerator AsyncReqCoro(string URL, Action<JSONNode> retHandler) {
+		Debug.Log("Going to request " + PConst.Server_URL + URL);
 		WWW __www = new WWW( PConst.Server_URL + URL);
 		while (!__www.isDone) {
 			yield return __www;
@@ -35,8 +36,9 @@ public class Lobby : MonoBehaviour {
 		if (!string.IsNullOrEmpty(__www.error)) {
 			Debug.Log("Error requesting " +  PConst.Server_URL + URL + ", error:" + __www.error);
 		} else {
+			Debug.Log("Got " + __www.text);
 			var __r = JSON.Parse(__www.text);
-			if (__r["error"] != null) {
+			if (__r["error"] != null) {	
 				Debug.Log("Called " + URL + ", got error " + __r["error"]["code"].AsInt + ":" + __r["error"]["message"].Value);
 			} else {
 				retHandler(__r);
@@ -49,7 +51,7 @@ public class Lobby : MonoBehaviour {
 		GCTX ctx = GCTX.Instance;
 		string __u =  "/powa.get_player_id?name=" + WWW.EscapeURL(ctx.User.Name);
 		StartCoroutine(AsyncReqCoro(__u, delegate(JSONNode a) {
-			ctx.User.GlobalId = a["result"]["id"].AsInt;
+			ctx.User.GlobalId = a["result"][0][0]["id"].AsInt;
 			RefreshMatchList();
 		}));
 
@@ -70,14 +72,23 @@ public class Lobby : MonoBehaviour {
 			__sv.transform.DetachChildren();
 
 			int __y = 0;
-			foreach (JSONNode __i in a["result"].AsArray) {
-				int __matchId = __i[0].AsInt;
+			JSONNode __matches = a["result"][0][0]["matches"];
+			foreach (JSONNode __i in __matches.AsArray) {
+				int __matchId = __i["id"].AsInt;
 				GameObject __match = (GameObject)Instantiate(__matchPre, new Vector3(0, 0 - __y * 45, 0), Quaternion.identity);
 				__match.transform.SetParent(__sv.transform, false);
 				__match.GetComponent<MatchRow>().MatchId = __matchId;
 				GameObject __name = __match.transform.Find("MatchName").gameObject;
 				if (__name) {
 					__name.GetComponent<Text>().text = __matchId.ToString();
+				};
+				GameObject __players = __match.transform.Find("PlayersNo").gameObject;
+				if (__players) {
+					string __playersStr = "";
+					foreach (JSONNode __j in __i["players"].AsArray) {
+						__playersStr += __playersStr == "" ? WWW.UnEscapeURL(__j.Value) : ", " + WWW.UnEscapeURL(__j.Value);
+					};
+					__players.GetComponent<Text>().text = __playersStr;
 				};
 				__y++;
 			};
@@ -88,8 +99,7 @@ public class Lobby : MonoBehaviour {
 		GCTX ctx = GCTX.Instance;
 		string __u = "/powa.create_match?id=" + ctx.User.GlobalId;
 		StartCoroutine(AsyncReqCoro(__u, delegate(JSONNode a) {
-			
-			Debug.Log(a["result"]);
+			int __matchId = a["result"]["id"].AsInt;
 			RefreshMatchList();
 		}));
 	}
@@ -99,9 +109,12 @@ public class Lobby : MonoBehaviour {
 		if (matchId == 0) {
 			return;
 		};
-		string __u = "/powa.join_match?id=" + ctx.User.GlobalId + "&match_id=" + matchId;
+		string __u = "/powa.join_match?player_id=" + ctx.User.GlobalId + "&match_id=" + matchId;
 		StartCoroutine(AsyncReqCoro(__u, delegate(JSONNode a) {
-			Debug.Log(a["result"]);
+			int __matchId = a["result"][0][0]["id"].AsInt;
+			if ( __matchId != 0) {
+				RefreshMatchList();
+			}
 		}));
 	}
 	// Update is called once per frame
