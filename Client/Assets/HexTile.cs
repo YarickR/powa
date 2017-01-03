@@ -56,8 +56,8 @@ public class HexTile : MonoBehaviour {
 		if (ctx.SelectedVehicle == null) {
 			return;
 		};
-		Vehicle __vh = ctx.SelectedVehicle.GetComponent<Vehicle>();
-		if (__vh.PlayerId != ctx.CurrentMovePlayerId) {
+		Vehicle __vh = ctx.SelectedVehicle;
+		if (__vh.PlayerId != ctx.User.GlobalId) {
 			return;
 		};
 		int __aX = __vh.X;
@@ -98,15 +98,22 @@ public class HexTile : MonoBehaviour {
 		if (ctx.SelectedVehicle == null) {
 			return;
 		};
-		Vehicle __vh = ctx.SelectedVehicle.GetComponent<Vehicle>();
-		if (__vh.PlayerId != ctx.CurrentMovePlayerId) {
+		Vehicle __vh = ctx.SelectedVehicle;
+		if (__vh.PlayerId != ctx.User.GlobalId) {
+			Debug.Log("Not your vehicle");
 			return;
 		};
+		if (!ctx.ActivityLock) {
+			Debug.Log("Not your move");
+			return;
+		};
+
 		if (__vh.Armor == 0) {
+			Debug.Log("This vehicle is dead");
 			return;
 		};
 		if (((__vh.Type == PConst.VType_Light) || (__vh.Type == PConst.VType_MediumRanged)) && __vh.AttackMode) {
-			__vh.Shoot(X, Y, null);
+			__vh.Shoot(X, Y, null, null);
 			return;
 		};
 		bool __found = false;

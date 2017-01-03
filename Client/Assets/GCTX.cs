@@ -2,17 +2,56 @@
 using UnityEngine.UI;
 using System.Collections;
 using System;
+using System.Reflection;
+using System.Text;
 using System.Collections.Generic;
+using UnityEngine.Networking;
+using SimpleJSON;
+
 
 public class GCTX : Singleton<GCTX> {
 	protected GCTX () {} 
 
-	public HexTile[,] FieldCells;
+	public HexTile[,] FieldCells = null;
 	public List<PPlayer> Players;
-	public PPlayer User;
-	public int UserId;
-	public int CurrentMovePlayerId;
-	public GameObject SelectedVehicle, MovingVehicle, ShootingVehicle;
+	public List<JSONClass> ServerCommands;
+	public PPlayer User = null;
+	public int UserId = 0;
+	public int CurrentMovePlayerId = 0;
+	public int MatchState = 0;
+	public Vehicle SelectedVehicle, MovingVehicle, ShootingVehicle;
+	public GameObject Lobby, FightUI, Timer;
+	public bool ActivityLock;
+	private IEnumerator _longPollCoro;
+	private ulong _lastMsgId, _lastCmdId;
+	private float _lastEOMDTS;
+	private Vector3 _lobbyCamPos;
+	private Quaternion _lobbyCamRtr;
+	public void InitLobby() {
+		_longPollCoro = null;
+		_lastMsgId = 0;
+		_lastCmdId = 0;
+		Camera __c = GameObject.Find("EyeSocket/Eye").GetComponent<Camera>();
+		_lobbyCamPos = __c.transform.localPosition;
+		_lobbyCamRtr = __c.transform.localRotation;
+
+		ActivityLock = false;
+		GameObject __ui = GameObject.Find("/UI");
+		Lobby = __ui.transform.Find("LobbyPanel").gameObject;
+		FightUI = __ui.transform.Find("FightUIPanel").gameObject;
+		Timer = FightUI.transform.Find("TimerPanel").gameObject;
+		User = new PPlayer(0, 0, Color.white); 
+		User.Name = PPlayer.PlayerFirstNames[UnityEngine.Random.Range(0, PPlayer.PlayerFirstNames.GetLength(0) - 1)];
+		User.Name += " " + PPlayer.PlayerLastNames[UnityEngine.Random.Range(0, PPlayer.PlayerLastNames.GetLength(0) - 1)];
+		GameObject __playerName =  GameObject.Find("/UI/UserInfoPanel/UserName");
+		if (__playerName) {
+			__playerName.GetComponent<Text>().text = User.Name;
+		};
+
+		MatchState = MATCH_STATE.LOBBY;
+		GetPlayerId();
+	}
+
 
 	public PPoint FindFreeCell(int xMin, int xMax, int yMin, int yMax) {
 		PPoint ret;
@@ -41,111 +80,193 @@ public class GCTX : Singleton<GCTX> {
 		return ret;
 	}
 
-	public void SetupMatch() {
-	/*
-		if (FieldCells == null) {
-			FieldCells = new HexTile[PConst.Map_Size, PConst.Map_Size];
+	public GameObject FindVehicleByPos(int x, int y, List<GameObject> list) {
+		for (int __i = 0; __i < list.Count; __i++) {
+			Vehicle __vh = list[__i].GetComponent<Vehicle>();
+			if ((__vh.X == x) && (__vh.Y == y)) {
+				return list[__i];
+			}
 		};
-		Sprite[] __hexTiles = Resources.LoadAll<Sprite>("Terrain");
-		for (int __h = 0; __h < PConst.Map_Size; __h++) {
-			for (int __w = 0; __w < PConst.Map_Size; __w++) {
+		return null;
+	}
+
+	public Vehicle FindVehicleById(int vehicleId, int playerId) {
+		Vehicle __ret = null;
+		if (vehicleId == 0) {
+			return null;
+		};
+		Players.ForEach(delegate(PPlayer p) {
+			if ((playerId == 0) || (p.GlobalId == playerId)) {
+				p.Units.ForEach(delegate(Vehicle v) {
+					if (v.Id == vehicleId) {
+						__ret = v;
+					};
+				});
+			}
+		});
+		return __ret;
+	}
+
+	public bool HisMoveNow( int globalId ) {
+		return Players[CurrentMovePlayerId].GlobalId == globalId;
+	}
+
+	public void SetupField(string fieldDescr, int fieldSize) {
+		if (FieldCells == null) {
+			FieldCells = new HexTile[fieldSize, fieldSize];
+		};
+		HexTile __tile = Resources.Load<HexTile>("HexTile");
+
+		for (int __h = 0; __h < fieldSize; __h++) {
+			for (int __w = 0; __w < fieldSize; __w++) {
+				
 				HexTile __t;
 				Vector3 __v = new Vector3(Vehicle.rect2hexX(__w, __h), (float)(__h * 0.01), Vehicle.rect2hexY(__w, __h));
-				__t = ( HexTile)Instantiate(hexTile,  __v, Quaternion.Euler(90, 0, 0));
-
-				if (UnityEngine.Random.Range (0, 100) < 30) {
-					__t.Type = UnityEngine.Random.Range (PConst.TType_Desert, PConst.TType_Marsh + 1);
-				} else
-					if (UnityEngine.Random.Range (0, 100) < 20) {
-					__t.Type = PConst.TType_Mountain;
-				} else {
-					__t.Type = PConst.TType_Plain;
-				};
-				__t.GetComponent<SpriteRenderer> ().sprite = __hexTiles [(__t.Type * 4) + UnityEngine.Random.Range(0, 4)];
+				__t = ( HexTile)Instantiate(__tile,  __v, Quaternion.Euler(90, 0, 0));
+				string __ts = fieldDescr.Substring((__h * fieldSize + __w) * 2, 2);
 				__t.X = __w;
 				__t.Y = __h;
-				FieldCells [__h, __w] = __t;
+				__t.Type = Convert.ToInt32(__ts, 16);
+				FieldCells[__h, __w] = __t;
 			};
 		};
-		Players = new List<PPlayer>();
-		ctx.UserId = UnityEngine.Random.Range(0, PConst.Max_Players);
-		for (int __i = 0; __i < PConst.Max_Players; __i++) {
-			ctx.Players.Add(new PPlayer (50, __i, __i == ctx.UserId ? Color.blue : Color.red ));
+
+		Sprite[] __hexTiles = Resources.LoadAll<Sprite>("Terrain");
+		for (int __h = 0; __h < FieldCells.GetLength(0); __h++) {
+			for (int __w = 0; __w < FieldCells.GetLength(1); __w++) {
+				HexTile __t = FieldCells [__h, __w];
+				__t.GetComponent<SpriteRenderer> ().sprite = __hexTiles [(__t.Type * 4) + UnityEngine.Random.Range(0, 4)];
+			};
 		};
+	}
 
-		string[] __prefabNames = new string[5] {"", "Vehicle_Light", "Vehicle_LightRanged", "Vehicle_Medium", "Vehicle_MediumRanged"};
-		int [,] __corners = new int[4,4] { 	{1, 4, 1, 4}, 
-											{PConst.Map_Size - 5, PConst.Map_Size -1, PConst.Map_Size - 5, PConst.Map_Size -1}, 
-											{PConst.Map_Size - 5, PConst.Map_Size -1, 1, 4}, 
-											{ 1, 4, PConst.Map_Size - 5, PConst.Map_Size -1}};
-		foreach (PPlayer __p in ctx.Players) {
-			for (int __i = PConst.VType_Light ; __i <= PConst.VType_MediumRanged ; __i++) {
-				string __pfName = __p.PlayerId == ctx.UserId ? __prefabNames[__i] + "Blue" : __prefabNames[__i] + "Red"; 
-				GameObject __prefab = Resources.Load<GameObject>(__pfName);
-				GameObject __vh = (GameObject)Instantiate(__prefab, new Vector3(0, 0, 0), Quaternion.identity); 
-				Vehicle __vhl = __vh.GetComponent<Vehicle>();
-				__vhl.Type = __i;
-				__vhl.PlayerId = __p.PlayerId;
-				__vhl.Id = __p.Units.Count;
-				__p.Units.Add(__vh);
-
-				PPoint __freeCell;
-				__freeCell = ctx.FindFreeCell(	__corners[ __p.PlayerId, 0], 
-												__corners[ __p.PlayerId, 1], 
-												__corners[ __p.PlayerId, 2], 
-												__corners[ __p.PlayerId, 3]);
-				if (__freeCell.X == -1) {
-					break;
+	public void CleanupField() {
+		if (FieldCells != null) {
+			for (int __h = 0; __h < FieldCells.GetLength(0); __h++) {
+				for (int __w = 0; __w < FieldCells.GetLength(1); __w++) {
+					Destroy(FieldCells[__h, __w].gameObject);
+					FieldCells[__h, __w] = null;
 				};
-				__vhl.MoveTo(__freeCell.X, __freeCell.Y);
 			};
+			FieldCells = null;
+		}; // Let GC do the rest
+		Camera __c = GameObject.Find("EyeSocket/Eye").GetComponent<Camera>();
+		__c.transform.localPosition = _lobbyCamPos;
+		__c.transform.localRotation = _lobbyCamRtr;
+	}
+
+
+	public void SetupCamera(int playerPos) {
+		Camera __c = GameObject.Find("EyeSocket/Eye").GetComponent<Camera>();
+
+		if (playerPos % 2 != 0) {
+			__c.transform.Translate(new Vector3(0, 0, 55));
+			__c.transform.eulerAngles = new Vector3(60, 180, 0 );
+		} else {
+			__c.transform.Translate(new Vector3(0, 0, -25));
+			__c.transform.eulerAngles = new Vector3(60, 0, 0);
 		};
-		ctx.PassTheMove(0, false);
-		*/
+	}
+
+	public void SetupPlayers(JSONArray players) {
+		Players = new List<PPlayer>();
+		for (int __i = 0; __i < players.Count; __i++) {
+			JSONClass __plr = players[__i].AsObject;
+			int __pos = __plr["pos"].AsInt;
+			Color __c = __pos % 2 == 0 ? Color.blue : Color.red;
+			PPlayer __p;
+			if (__plr["id"].AsInt == User.GlobalId) {
+				__p = User;
+				__p.Money = __plr["money"].AsInt;
+				__p.BaseColor = __c;
+				SetupCamera(__pos);
+			} else {
+				__p = new PPlayer (__plr["money"].AsInt, __pos, __c );
+				__p.GlobalId = __plr["id"].AsInt;
+				__p.Name = __plr["name"].Value;
+			};
+			Players.Add(__p);
+			__p.PlayerId = __pos;
+		};
+		Players.ForEach(delegate (PPlayer __p) { __p.Setup(User.PlayerId); });
+	}
+
+	public void CleanupPlayers() {
+		Players.ForEach(delegate(PPlayer __p) { __p.Cleanup(); });
+		Players.Clear();
+	}
+
+	public void SetupVehicles(JSONArray vehicles) {
+		string[] __prefabNames = new string[5] {"", "Vehicle_Light", "Vehicle_LightRanged", "Vehicle_Medium", "Vehicle_MediumRanged"};
+		PropertyInfo[] __props = Type.GetType("Vehicle").GetProperties(BindingFlags.Public|BindingFlags.Instance|BindingFlags.DeclaredOnly);
+		foreach (JSONNode __v in vehicles) {
+			int __globalId = __v["PlayerId"].AsInt;
+			int __vType = __v["Type"].AsInt;
+			PPlayer __player = null;
+			Players.ForEach(delegate (PPlayer p) { 
+				if (p.GlobalId == __globalId ) { 
+					__player = p ; 
+				} 
+			});
+			if (__player == null) {
+				Debug.Log("Vehicle for unknown player, skipping");
+				continue;
+			};
+			string __pfName = (__player.PlayerId % 2) == 0 ? __prefabNames[__vType] + "Blue" : __prefabNames[__vType] + "Red"; 
+			GameObject __prefab = Resources.Load<GameObject>(__pfName);
+			GameObject __vh = (GameObject)Instantiate(__prefab, new Vector3(0, 0, 0), Quaternion.identity); 
+			Vehicle __vhl = __vh.GetComponent<Vehicle>();
+			foreach (PropertyInfo __prop in __props) {
+				if (__v[__prop.Name] != null) {
+					__prop.SetValue(__vhl, Convert.ChangeType(__v[__prop.Name].AsInt, __prop.PropertyType) , null);
+				};
+			};
+			__player.Units.Add(__vhl);
+			__vhl.PlayerId = __globalId;
+			__vhl.MoveTo(__vhl.X, __vhl.Y);
+		};	
 	}
 
 	public void EndTurn() {
-		int __i, __p;
-		for (__p = 0; __p < Players.Count; __p++) {
-			for (__i = 0; __i < Players[__p].Units.Count; __i++) {
-				Vehicle __v = Players[__p].Units[__i].GetComponent<Vehicle>();
-				__v.Time = __v.MaxTime;
-				__v.AttackMode = false;
-				if ((SelectedVehicle != null) && (Players[__p].Units[__i] == SelectedVehicle)) {
-					__v.ShowVehicleInfo();
+		Players.ForEach(delegate(PPlayer p) { 
+			p.Units.ForEach(delegate(Vehicle v) {
+				v.Time = v.MaxTime;
+				v.AttackMode = false;
+				if ((SelectedVehicle != null) && (v == SelectedVehicle)) {
+					v.ShowVehicleInfo();
 				} else {
-					__v.ShowUnitStats();
-				};
-			};
-		};
-		ToggleAttack(false);
-	}
-	public void UnselectVehicle(GameObject vh) {
-		Vehicle __vh = vh.GetComponent<Vehicle>();
-		for (int __i = 0; __i < __vh.Path.Count ; __i++) {
-			PPoint __pp = __vh.Path[__i];
-			FieldCells[__pp.Y, __pp.X].GetComponent<SpriteRenderer>().color = Color.white;
-		};
-		__vh.Path.Clear();
-		FieldCells[__vh.Y, __vh.X].GetComponent<SpriteRenderer>().color = Color.white;
-		__vh.AttackMode = false;
+					v.ShowUnitStats();
+				}
+			});
+		});
 		ToggleAttack(false);
 	}
 
-	public void SelectVehicle(GameObject vh) {
-		Vehicle __vh = vh.GetComponent<Vehicle>();
-		HexTile __t = FieldCells[__vh.Y, __vh.X];
-		__t.GetComponent<SpriteRenderer>().color = new Color (1,1,1,0.2f);
-		__vh.ShowVehicleInfo();
-		__vh.AttackMode = false;
+	public void setEndTurnIndicator() {
+		Timer.transform.Find("Text").gameObject.GetComponent<Text>().color = User.EOTLevel == PConst.EOT_None ? Color.white : Color.red;
+	}
+
+	public void UnselectVehicle(Vehicle vh) {
+		vh.Path.ForEach(delegate (PPoint pp) { FieldCells[pp.Y, pp.X].GetComponent<SpriteRenderer>().color = Color.white; });
+		vh.Path.Clear();
+		FieldCells[vh.Y, vh.X].GetComponent<SpriteRenderer>().color = Color.white;
+		vh.AttackMode = false;
+		ToggleAttack(false);
+	}
+
+	public void SelectVehicle(Vehicle vh) {
+		FieldCells[vh.Y, vh.X].GetComponent<SpriteRenderer>().color = new Color (1,1,1,0.2f);
+		vh.ShowVehicleInfo();
+		vh.AttackMode = false;
 		ToggleAttack(false);
 	}
 
 	public void ToggleAttack(bool on) {
 		if (SelectedVehicle == null) {
 			return;
-		}
-		Vehicle __vh = SelectedVehicle.GetComponent<Vehicle>();
+		};
+		return;
+		Vehicle __vh = SelectedVehicle;
 		GameObject __o = GameObject.Find("Canvas/AttackButton");
 		Image __btnImg = __o.GetComponent<Image>();
 		if (!on) {
@@ -157,7 +278,7 @@ public class GCTX : Singleton<GCTX> {
 				};
 			};
 		} else {
-			if ((__vh.Armor == 0) || (__vh.Time < __vh.ShotTU) || (__vh.PlayerId != CurrentMovePlayerId)) {
+			if ((__vh.Armor == 0) || (__vh.Time < __vh.ShotTU) || !HisMoveNow(__vh.PlayerId)) {
 				return;
 			};
 			__vh.AttackMode = true;
@@ -170,27 +291,407 @@ public class GCTX : Singleton<GCTX> {
 					};
 				};
 			};
-
 		};
 	}
 
-	public GameObject FindVehicleByPos(int x, int y, List<GameObject> list) {
-		for (int __i = 0; __i < list.Count; __i++) {
-			Vehicle __vh = list[__i].GetComponent<Vehicle>();
-			if ((__vh.X == x) && (__vh.Y == y)) {
-				return list[__i];
-			}
-		};
-		return null;
-	}
 
 	public void PassTheMove(int PlayerId, bool next = true) {
 		if (next) {
 			PlayerId = (PlayerId + 1) % Players.Count;
 		};
-		Players[PlayerId].EOMTS = UnityEngine.Time.time + PConst.Move_Time + 1; // One more second of full timer
+		Players[PlayerId].EOMTS = UnityEngine.Time.time + PConst.Move_Time;
 		CurrentMovePlayerId = PlayerId;
-		GameObject __img = GameObject.Find("Canvas/MoveTimer");
+		GameObject __img = Timer.transform.Find("TimerFG").gameObject;
 		__img.GetComponent<Image>().color = Players[PlayerId].BaseColor;
+	}
+
+	IEnumerator AsyncReqCoro(string URL, Action<JSONNode> retHandler) {
+		Debug.Log("Going to request " + PConst.Server_URL + URL);
+		WWW __www = new WWW( PConst.Server_URL + URL);
+		while (!__www.isDone) {
+			yield return __www;
+		};
+		if (!string.IsNullOrEmpty(__www.error)) {
+			Debug.Log("Transport error:" + __www.error + " calling " +  PConst.Server_URL + URL);
+		} else {
+			Debug.Log("Got " + __www.text);
+			var __r = JSON.Parse(__www.text);
+			if (__r["error"] != null) {	
+				Debug.Log("Lua error " +  __r["error"]["code"].AsInt + ":" + __r["error"]["message"].Value + " calling " + URL );
+			} else {
+				retHandler(__r);
+			}
+		};
+	}
+
+	public void GetPlayerId() {
+		string __u =  "/powa.get_player_id?name=" + WWW.EscapeURL(User.Name);
+		StartCoroutine(AsyncReqCoro(__u, delegate(JSONNode a) {
+			User.GlobalId = a["result"][0][0]["id"].AsInt;
+			RefreshMatchList();
+			if (User.GlobalId != 0) {
+				if (_longPollCoro != null) {
+					StopCoroutine(_longPollCoro);
+				};
+				_longPollCoro = LongPoller();
+				StartCoroutine(_longPollCoro);
+			};
+		}));
+	}
+
+	public void RefreshMatchList() {
+		GameObject __glom =  Lobby.transform.Find("GettingListOfMatches").gameObject;
+		__glom.SetActive(true);
+		GameObject __matchPre = Resources.Load<GameObject>("MatchInfo");
+		GameObject __matchListUserInfo = Resources.Load<GameObject>("MatchListUserInfo");
+		string __u = "/powa.get_match_list?id=" + User.GlobalId;
+		StartCoroutine(AsyncReqCoro(__u, delegate(JSONNode a) {
+			__glom.SetActive(false);
+			GameObject __sv = Lobby.transform.Find("MatchList/Viewport/Content").gameObject;
+			for (int __cc = __sv.transform.childCount - 1; __cc >= 0; --__cc) {
+				GameObject.Destroy(__sv.transform.GetChild(__cc).gameObject);
+      		};
+			__sv.transform.DetachChildren();
+			int __y = 1;
+			JSONNode __matches = a["result"][0][0]["matches"];
+			foreach (JSONNode __i in __matches.AsArray) {
+				int __matchId = __i["id"].AsInt;
+				GameObject __match = (GameObject)Instantiate(__matchPre, new Vector3(0, 21 - __y * 42, 0), Quaternion.identity);
+				__match.transform.SetParent(__sv.transform, false);
+				__match.GetComponent<MatchInfo>().MatchId = __matchId;
+				GameObject __name = __match.transform.Find("MatchName").gameObject;
+				if (__name) {
+					__name.GetComponent<Text>().text = __matchId.ToString();
+				};
+
+				GameObject __matchUsers = __match.transform.Find("MatchUsers").gameObject;
+				int __playerNo = 1;
+				foreach (JSONNode __j in __i["players"].AsArray) {
+					GameObject __mlui = (GameObject)Instantiate(__matchListUserInfo, new Vector3(0, 0, 0), Quaternion.identity);
+					__mlui.transform.Find("Level").gameObject.GetComponent<Text>().text = "1";
+					__mlui.transform.Find("UserName").gameObject.GetComponent<Text>().text = WWW.UnEscapeURL(__j.Value);
+					__mlui.transform.SetParent(__matchUsers.transform, false);
+					__mlui.SetActive(true);
+					__playerNo++;
+				};
+				__y++;
+			};
+		}));
+	}
+
+	public void CreateMatch() {
+		string __u = "/powa.create_match?id=" + User.GlobalId;
+		StartCoroutine(AsyncReqCoro(__u, delegate(JSONNode a) {
+			int __matchId = a["result"]["id"].AsInt;
+			RefreshMatchList();
+		}));
+	}
+
+	public void JoinMatch(int matchId) {
+		if (matchId == 0) {
+			return;
+		};
+		string __u = "/powa.join_match?player_id=" + User.GlobalId + "&match_id=" + matchId;
+		StartCoroutine(AsyncReqCoro(__u, delegate(JSONNode a) {
+			int __matchId = a["result"][0][0]["id"].AsInt;
+			if ( __matchId != 0) {
+				RefreshMatchList();
+			}
+		}));
+	}
+
+	public void GetMatchData() {
+		string __u = "/powa.get_match_data?player_id=" + User.GlobalId;
+		StartCoroutine(AsyncReqCoro(__u, delegate(JSONNode a) {
+			SetupField(a["result"][0][0]["field"].Value, a["result"][0][0]["size"].AsInt);
+			SetupPlayers(a["result"][0][0]["players"].AsArray);
+			MatchState = MATCH_STATE.RUNNING;
+			PassTheMove(a["result"][0][0]["active_player"].AsInt, false);
+			GetMatchVehicles();
+		}));
+	}
+	public void GetMatchVehicles() {
+		string __u = "/powa.get_match_vehicles?player_id=" + User.GlobalId;
+		StartCoroutine(AsyncReqCoro(__u, delegate(JSONNode a) {
+			SetupVehicles(a["result"][0].AsArray);
+		}));
+	}
+
+	IEnumerator CmdCoro(string URL, Action<JSONNode> retHandler) {
+		Debug.Log("Sending command " + PConst.Server_URL + URL);
+		ulong __lastAckCmdId;
+		do {
+			__lastAckCmdId = 0;
+			WWW __www = new WWW( PConst.Server_URL + URL);
+			while (!__www.isDone) {
+				yield return __www;
+			};
+			if (!string.IsNullOrEmpty(__www.error)) {
+				Debug.Log("Transport error " + __www.error + " calling " +  PConst.Server_URL + URL);
+			} else {
+				Debug.Log("Got " + __www.text);
+				var __r = JSON.Parse(__www.text);
+				if (__r["error"] != null) {	
+					Debug.Log("Lua error " +  __r["error"]["code"].AsInt + ":" + __r["error"]["message"].Value + " calling "+ URL );
+					break;
+				} else {
+					__lastAckCmdId = (ulong)__r["result"][0][0].AsInt;
+					break;
+				};
+			};
+			yield return new WaitForSeconds(1);
+		} while (__lastAckCmdId == 0);
+		if (__lastAckCmdId < _lastCmdId ) {
+			Debug.Log("Last sent command has id " + _lastCmdId + ", last acknowledged id: " + __lastAckCmdId);
+		};
+	}
+
+	public void MatchCmd(string data) {
+		string __u =  "/powa.match_cmd?cmd_id=" + ++_lastCmdId + "&player_id=" +  User.GlobalId + "&data=" + data;
+		StartCoroutine(CmdCoro(__u, delegate(JSONNode a) { return ; }));
+	}
+
+	public void Send_VEHICLE_MOVE(Vehicle vh) {
+		string __pathStr = "";
+		vh.Path.ForEach(delegate(PPoint p) {__pathStr += System.String.Format("{0:X2}{1:X2}", p.X, p.Y);});
+		JSONClass __cmd = new JSONClass();
+		__cmd.Add("cmd", new JSONData((int)PCmds.VEHICLE_MOVE));
+		__cmd.Add("player", new JSONData((int)vh.PlayerId));
+		__cmd.Add("vehicle", new JSONData((int)vh.Id));
+		__cmd.Add("path", new JSONData(__pathStr));
+		__cmd.Add("pathlen", new JSONData((int)vh.Path.Count));
+		MatchCmd(__cmd.ToJSON(0));
+	}
+
+	public void Send_VEHICLE_ATTACK(Vehicle vh, Vehicle target, int tgtX, int tgtY) {
+		JSONClass __cmd = new JSONClass();
+		__cmd.Add("cmd", new JSONData((int)PCmds.VEHICLE_ATTACK));
+		__cmd.Add("player", new JSONData((int)vh.PlayerId));
+		__cmd.Add("vehicle", new JSONData((int)vh.Id));
+		__cmd.Add("tpid", new JSONData(target != null ? (int)target.PlayerId : (int)0));
+		__cmd.Add("tvid", new JSONData(target != null ? (int)target.Id : (int)0));
+		__cmd.Add("target", new JSONData(System.String.Format("{0:X2}{1:X2}", tgtX, tgtY)));
+		MatchCmd(__cmd.ToJSON(0));
+	}
+
+	public void Send_END_TURN() {
+		JSONClass __cmd = new JSONClass();
+		__cmd.Add("cmd", new JSONData((int)PCmds.END_TURN));
+		__cmd.Add("player", new JSONData((int)User.GlobalId));
+		__cmd.Add("state", new JSONData((int)User.EOTLevel));
+		MatchCmd(__cmd.ToJSON(0));
+	}
+
+	IEnumerator LongPoller() {
+		do {
+			string __url = PConst.Server_URL + PConst.LPURL + "?player_id=" + User.GlobalId + "&last_msg_id=" + _lastMsgId;
+			Debug.Log("Going to request " + __url);
+			WWW __www = new WWW( __url);
+			while (!__www.isDone) {
+				yield return __www;
+			};
+			if (!string.IsNullOrEmpty(__www.error)) {
+				Debug.Log("Error requesting " +  __url + ", error:" + __www.error);
+				yield return new WaitForSeconds(1);
+			} else {
+				var __r = JSON.Parse(__www.text);
+				if (__r["error"] != null) {	
+					Debug.Log("Called " + __url + ", got error " + __r["error"]["code"].AsInt + ":" + __r["error"]["message"].Value);
+					yield return new WaitForSeconds(1);
+				} else {
+					foreach (JSONNode __cmd in __r["result"][0].AsArray) {
+						JSONClass __c = __cmd.AsObject;
+						__c.Add("state", new JSONData(PCmdState.READY));
+						__c.Add("flags", new JSONData(PCmdFlags.DEFAULT));
+						_lastMsgId = (ulong)__c["msg_id"].AsInt;
+						ServerCommands.Add(__c);
+					};
+				};
+			};	
+		} while (true);
+	}
+
+
+	public void ProcessServerCmdQueue() {
+		Queue<int> __rq = new Queue<int>(); // Remove queue
+		int __p = 0;
+		ServerCommands.ForEach(delegate (JSONClass c) {
+			if ((c["state"].AsInt == PCmdState.READY) && 
+				((__p == 0) || ((c["flags"].AsInt & PCmdFlags.PARALLEL) != 0))) {
+				/* Either this is the first command or it was marked as allowed for the out of order processing */
+				ProcessServerCmd(c.AsObject);
+			};
+			if (c["state"].AsInt == PCmdState.DONE) {
+				Debug.Log("Command has been processed");
+				__rq.Enqueue(__p);
+			};
+			__p++;
+		}) ;
+		while (__rq.Count > 0) {
+			ServerCommands.RemoveAt(__rq.Dequeue());	
+		};
+		__rq = null;
+	}
+
+	public void ProcessServerCmd(JSONClass c) {
+		int __pId, __vhId;
+		Vehicle __vh, __tvh;
+		PPoint __pp;
+		c["state"].AsInt = PCmdState.PROCESSING;
+		switch (c["data"]["cmd"].AsInt) {
+			case PCmds.START_MATCH: 
+				Debug.Log("START_MATCH");		
+				MatchState = MATCH_STATE.READY;
+				GetMatchData();
+				c["state"].AsInt = PCmdState.DONE;
+				break;
+			case PCmds.PASS_MOVE: 
+				Debug.Log("PASS_MOVE");
+				PassTheMove(c["data"]["active_player"].AsInt, false);
+				c["state"].AsInt = PCmdState.DONE;
+				break;
+			case PCmds.VEHICLE_MOVE:
+				Debug.Log("VEHICLE_MOVE");
+				int __pathLen = c["data"]["pathlen"].AsInt;
+				string __pathStr = c["data"]["path"].Value;
+				__vhId = c["data"]["vehicle"].AsInt;
+				__pId = c["data"]["player"].AsInt;
+				__vh = FindVehicleById(__vhId, __pId);
+				if (__vh != null) {
+					__vh.MoveCommand = c;
+					for (int __i = 0; __i < c["data"]["pathlen"].AsInt; __i++) {
+						__pp = new PPoint();
+						__pp.X = Convert.ToInt32(__pathStr.Substring(__i * 4, 2), 16);
+						__pp.Y = Convert.ToInt32(__pathStr.Substring(__i * 4 + 2, 2), 16);
+						__vh.Path.Add(__pp);
+					};
+					__vh.PathStep = 0;
+					__vh.LastMoveTS = 0;
+					if (MovingVehicle != null) {
+						/* if something is already moving, let's place it where it belongs and start over */
+						__pp = MovingVehicle.Path[MovingVehicle.Path.Count - 1];
+						MovingVehicle.MoveTo(__pp.X, __pp.Y);
+						MovingVehicle.Path.Clear();
+					};
+					MovingVehicle = __vh;
+				} else {
+					Debug.Log("Can't find vehicle " + __vhId + " belonging to player " + __pId);
+					c["state"].AsInt = PCmdState.DONE;
+				};
+				break;
+			case PCmds.VEHICLE_ATTACK:
+				Debug.Log("VEHICLE_ATTACK");
+				__pId = c["data"]["player"].AsInt;
+				__vhId = c["data"]["vehicle"].AsInt;
+				int __tvId = c["data"]["tvid"].AsInt;
+				int __tpId = c["data"]["tpid"].AsInt;
+				int __tgtX = Convert.ToInt32(c["data"]["target"].Value.Substring(0, 2), 16);
+				int __tgtY = Convert.ToInt32(c["data"]["target"].Value.Substring(0, 2), 16);
+				__vh = FindVehicleById(__vhId, __pId);
+				__tvh = FindVehicleById(__tvId, __tpId);
+				if (!__vh.Shoot(__tgtX, __tgtY, __tvh, c)) {
+					c["state"].AsInt = PCmdState.DONE;
+				};
+				break;
+			case PCmds.END_TURN:
+				Debug.Log("END_TURN");
+				__pId = c["data"]["player"].AsInt;
+				Players.ForEach(delegate(PPlayer p) {
+					if (p.GlobalId == __pId) {
+						p.EOTLevel = c["data"]["state"].AsInt;
+						if (p.EOTLevel != 0) {
+							p.EOMTS = UnityEngine.Time.time;
+						};
+						if (__pId == User.GlobalId) {
+							setEndTurnIndicator();
+						};
+					};
+				});
+				c["state"].AsInt = PCmdState.DONE;
+				break;
+			case PCmds.NEXT_TURN:
+				Debug.Log("NEXT_TURN");
+				int __apId = c["data"]["active_player"].AsInt;
+				Players.ForEach(delegate(PPlayer p) { p.NextTurn(); } );
+				setEndTurnIndicator();
+				PassTheMove(__apId, false);
+				c["state"].AsInt = PCmdState.DONE;
+				break;
+			case PCmds.END_MATCH:
+				Debug.Log("END_MATCH");
+				MatchState = MATCH_STATE.LOBBY;
+				CleanupField();
+				CleanupPlayers();
+				c["state"].AsInt = PCmdState.DONE;
+				break;
+			default:
+				c["state"].AsInt = PCmdState.DONE;
+				break;
+		};
+	}
+
+	public void Update() {
+		if (ServerCommands.Count > 0) {
+			ProcessServerCmdQueue();
+		};
+		switch (MatchState) {
+			case 0: 
+				InitLobby(); return ;
+			case MATCH_STATE.LOBBY:
+			case MATCH_STATE.PREPARING:
+				if (Lobby.activeSelf == false) Lobby.SetActive(true);
+				if (FightUI.activeSelf == true) FightUI.SetActive(false);
+				return; 
+			case MATCH_STATE.READY:
+				if (Lobby.activeSelf == true) Lobby.SetActive(false);
+				if (FightUI.activeSelf == false) FightUI.SetActive(true);
+
+				return;
+			case MATCH_STATE.FINISHED:
+				if (Lobby.activeSelf == false) Lobby.SetActive(true);
+				if (FightUI.activeSelf == true) FightUI.SetActive(false);
+				return;
+		};
+		// 	case MATCH_STATE.RUNNING:
+		if (MovingVehicle != null) {
+			Vehicle __vh = MovingVehicle;
+			if ((__vh.Path.Count < 1) || (__vh.PathStep > __vh.Path.Count - 1)) {
+				__vh.FinishMove();
+				MovingVehicle = null;
+				FieldCells[__vh.Y, __vh.X].GetComponent<SpriteRenderer>().color = Color.white;
+				if (__vh.MoveCommand != null) {
+					/* We've moved the vehicle due to server command */
+					__vh.MoveCommand["state"].AsInt = PCmdState.DONE;
+					__vh.MoveCommand = null;
+				};
+			} else {
+				if ((__vh.PathStep == 0) && (__vh.PlayerId == User.GlobalId)) {
+					/* VEHICLE_MOVE command */	
+					Send_VEHICLE_MOVE(__vh);
+				};
+				if ( Time.time - __vh.LastMoveTS >= (__vh.PlayerId == User.GlobalId ? 0.2 : 0.1)) {
+					__vh.MoveStep();
+				};
+			};
+		} else 
+		if (ShootingVehicle != null) {
+			//Nothing to do yet
+		} else {
+			PPlayer __p = Players[CurrentMovePlayerId];
+			if (__p.EOMTS != 0) {
+				if (__p.EOMTS >= UnityEngine.Time.time) {
+					float __diff = __p.EOMTS - UnityEngine.Time.time;
+					if (UnityEngine.Time.time - _lastEOMDTS > 0.1) {
+						GameObject __EOMTimer =  Timer.transform.Find("TimerFG").gameObject;
+						float __scale = __diff > PConst.Move_Time ? 1 : Math.Max(__diff / PConst.Move_Time, 0);
+						__EOMTimer.GetComponent<Image>().fillAmount = __scale;
+						_lastEOMDTS = UnityEngine.Time.time;
+						if (ActivityLock != ((__diff > 0 ) & (__p.GlobalId == User.GlobalId))) {
+							ActivityLock = ((__diff > 0 ) & (__p.GlobalId == User.GlobalId));
+						};
+					};
+				};
+			};
+		};
 	}
 }

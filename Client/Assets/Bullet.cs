@@ -2,10 +2,14 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using SimpleJSON;
+
 public class Bullet : MonoBehaviour {
 	public int TargetX { get; set; }
 	public int TargetY { get; set; }
+	public Vehicle Shooter { get; set; }
 	public Vehicle Target { get; set; }
+	public JSONClass ShootCommand;
 	public int Type { get; set; }
 	public int Damage { get; set; }
 	public int Radius { get; set; }
@@ -51,23 +55,23 @@ public class Bullet : MonoBehaviour {
 		if (Type == PConst.BType_Cannon) {
 			Target.DamageVehicle(Damage);
 		} else {
-			for (int __p = 0; __p < ctx.Players.Count; __p++) {
-				List<GameObject> __l = ctx.Players[__p].Units; 
-				for (int __i = 0; __i < __l.Count; __i++) {
-					Vehicle  __vhl = __l[__i].GetComponent<Vehicle>();
-					int __dX = TargetX > __vhl.X ? TargetX - __vhl.X : __vhl.X - TargetX;
-					int __dY = TargetY > __vhl.Y ? TargetY - __vhl.Y : __vhl.Y - TargetY;
+			ctx.Players.ForEach(delegate(PPlayer p) {
+				p.Units.ForEach(delegate(Vehicle v) {
+					int __dX = TargetX > v.X ? TargetX - v.X : v.X - TargetX;
+					int __dY = TargetY > v.Y ? TargetY - v.Y : v.Y - TargetY;
 					if ((__dX <= Radius) && (__dY <= Radius)) {
-						__vhl.DamageVehicle(Math.Max(Radius - __dX, Radius - __dY));
-					};
-				};
-			};
+						v.DamageVehicle(Math.Max(Radius - __dX, Radius - __dY));
+					};	
+				});
+			});
 		};
 	}
 
 	void OnDestroy  () {
 		GCTX ctx = GCTX.Instance;
 		ctx.ShootingVehicle = null;
-		ctx.PassTheMove(ctx.CurrentMovePlayerId, true);
+		if (ShootCommand != null) {
+			ShootCommand ["state"].AsInt = PCmdState.DONE;
+		};
 	}
 }

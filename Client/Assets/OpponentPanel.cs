@@ -3,9 +3,8 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
-public class UnitStats : MonoBehaviour {
-	public Image UnitPic;
-	public Text ArmorStats, TimerStats, AttackStats;
+public class OpponentPanel : MonoBehaviour {
+	public Text UserName, Level;
 	// Use this for initialization
 	void Start () {
 		

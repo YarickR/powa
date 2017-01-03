@@ -1,17 +1,19 @@
-﻿using UnityEngine;
-using System;
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
+using UnityEngine;
 public class PPlayer
 {
 	public int Money 		{ get; set;	}
 	public int PlayerId		{ get; set;	}
 	public int GlobalId 	{ get; set; }
-	public int EOTLevel 	{ get; set; }
 	public float EOMTS 		{ get; set; }
 	public Color BaseColor 	{ get; set; }
 	public string Name 		{ get; set; }
-	public List<GameObject> Units;
+	public int EOTLevel 	{ get; set; }
+	public List<Vehicle> Units;
+	private OpponentPanel _opPanel;
+
+
 	public static readonly string[] PlayerFirstNames = {
 	  "James",
 	  "John",
@@ -2741,9 +2743,40 @@ public class PPlayer
 		Money = newMoney; 
 		PlayerId = newId;
 		BaseColor = newColor;
-		Units = new List<GameObject>();
+		Units = new List<Vehicle>();
+		EOMTS = 0;
 		EOTLevel = PConst.EOT_None;
-		EOMTS = 0;	
+		_opPanel = null;
 	}
 
+	public void NextTurn() {
+		EOTLevel = PConst.EOT_None;
+		Units.ForEach(delegate (Vehicle v) { v.NextTurn(); } );
+	}
+	public void Setup(int UserPlayerId) {
+		GCTX ctx = GCTX.Instance;
+		int[,] __ppm = new int[4,4] {{0,1,2,3},{1,0,3,2},{3,2,0,1},{2,3,1,0}};
+		if (PlayerId != UserPlayerId) {
+			int __pId = __ppm[UserPlayerId,PlayerId];
+			if (__pId == 0) {
+				Debug.LogError("Bad Math");
+			} else {
+				GameObject __op = ctx.FightUI.transform.Find("OpponentPanel" + __pId).gameObject;
+				if (__op) {
+					__op.SetActive(true);
+					_opPanel = __op.GetComponent<OpponentPanel>();	
+					_opPanel.UserName.text = Name;
+					_opPanel.Level.text = "1";
+				
+				};
+			};
+		};
+	}
+	public void Cleanup() {
+		Units.ForEach(delegate(Vehicle __v) { GameObject.Destroy(__v.gameObject); } ); 
+		Units.Clear(); 
+		if (_opPanel) {
+			_opPanel.gameObject.SetActive(false);
+		};
+	}
 }
