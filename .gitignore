@@ -1,4 +1,6 @@
-Client/Library
-Client/Temp
+Client/Library/
+Client/Temp/
+Client/ProjectSettings/
+Client/obj/
 Client/PoWa.apk
 Client/PoWa.app/

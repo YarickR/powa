@@ -1,10 +1,14 @@
 fileFormatVersion: 2
 guid: a660d5dcb8df64dbb91b57ff6ca57860
-timeCreated: 1461618520
+timeCreated: 1483312428
 licenseType: Free
 MonoImporter:
   serializedVersion: 2
-  defaultReferences: []
+  defaultReferences:
+  - Projectile: {instanceID: 0}
+  - OVHStats: {fileID: 160696, guid: ff280dfbdd60941259bc3bfadbb6a8d9, type: 2}
+  - UnitStats: {fileID: 1662866815537854, guid: 3f3e4a17aabe242d0a5f758b0749062c,
+      type: 2}
   executionOrder: 0
   icon: {instanceID: 0}
   userData: 
