@@ -1,5 +1,6 @@
 ﻿using UnityEngine;
 using System.Collections;
+using System.Collections.Generic;
 
 public class HexTile : MonoBehaviour {
 	public int X { get; set; }
@@ -35,18 +36,33 @@ public class HexTile : MonoBehaviour {
 	
 	}
 
-	bool adjacentTo(int aX, int aY) {
+	public bool adjacentTo(int aX, int aY) {
 		for (int __i = 0; __i < 6; __i++) {
-			int __sX = Y & 1;
-			__sX = __sX != 0 ? _adjShiftsOdd[__i].X : _adjShiftsEven[__i].X;
-			int __sY = _adjShiftsOdd[__i].Y;
+			int __sX, __sY;
+			__sX = (Y & 1) != 0 ? _adjShiftsOdd[__i].X : _adjShiftsEven[__i].X;
+			__sY = _adjShiftsOdd[__i].Y;
 			if ((X + __sX  == aX) && (Y + __sY == aY)) {
 				return true;
 			}
 		};
 		return false;
 	}
+
+	public List<PPoint> Neighbours() {
+		List<PPoint> __ret = new List<PPoint>(6); // no more than 6 neighbours for hex tile
+		for (int __i = 0; __i < 6; __i++) {
+			int __sX, __sY;
+			__sX = (Y & 1) != 0 ? _adjShiftsOdd[__i].X : _adjShiftsEven[__i].X;
+			__sY = _adjShiftsOdd[__i].Y;
+			if (((X + __sX) >= 0) && ((Y + __sY) >= 0)) {
+				__ret.Add(new PPoint { X = X + __sX, Y = Y + __sY });
+			};
+		};
+		return __ret;
+	}
+
 	void OnMouseEnter() {
+	/*
 		if (!Input.GetButton("Left") || Occupied || (Type == PConst.TType_Mountain)) {
 			return;
 		};
@@ -85,6 +101,7 @@ public class HexTile : MonoBehaviour {
 			__vh.RemovePathPoints(__i + 1);
 		};
 		GetComponent<SpriteRenderer>().color = new Color (1,1,1,0.2f);
+		*/
 	}
 
 	void OnMouseExit() {
@@ -116,6 +133,22 @@ public class HexTile : MonoBehaviour {
 			__vh.Shoot(X, Y, null, null);
 			return;
 		};
+		/* Ok we need to either show a path or start movement */
+		List<PPoint> __newPath = ctx.Field.FindPath(__vh.X, __vh.Y, X, Y);
+		if (__newPath.Count > 0) {
+			if ((__newPath.Count == __vh.Path.Count) && 
+				(__newPath[0] == __vh.Path[__vh.Path.Count - 1])) { // We're getting last to first list of points from A* algo 
+				ctx.MovingVehicle = ctx.SelectedVehicle;
+				__vh.PathStep = 0;
+				__vh.LastMoveTS = 0;
+			} else {
+				__vh.HidePath();
+				__newPath.Reverse();
+				__vh.Path = __newPath;
+				__vh.ShowPath(__vh.Time);
+			};
+		};
+		/*
 		bool __found = false;
 		int __i;
 		for (__i = 0; __i < __vh.Path.Count; __i++) {
@@ -131,6 +164,7 @@ public class HexTile : MonoBehaviour {
 		ctx.MovingVehicle = ctx.SelectedVehicle;
 		__vh.PathStep = 0;
 		__vh.LastMoveTS = 0;
+		*/
 	}
 
 	public void Highlight(bool hl, Color hlColor) {

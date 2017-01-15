@@ -21,7 +21,7 @@
 	public const int BType_Howitzer = 1;
 	public const int BType_Cannon 	= 2;
 	public const int Max_Players    = 2;
-	public const int Map_Size		= 16;
+	public const int Map_Size		= 12;
 	public const int Move_Time		= 13;
 	public const int EOT_None 		= 0;
 	public const int EOT_Soft 		= 1;

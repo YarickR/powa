@@ -24,7 +24,7 @@ public class Bullet : MonoBehaviour {
 		Transform __t = this.gameObject.transform;
 		int __x = Vehicle.hex2rectX(__t.position.x, __t.position.z);
 		int __y = Vehicle.hex2rectY(__t.position.x, __t.position.z);
-		if ((__x < 0) || (__y < 0) || (__x > ctx.FieldCells.GetUpperBound(1)) || (__y > ctx.FieldCells.GetUpperBound(0))) {
+		if ((__x < 0) || (__y < 0) || (__x >= ctx.Field.Width) || (__y > ctx.Field.Height)) {
 			Debug.Log("Position: " + __x + "x" + __y + ", target:" + TargetX + "x" +  TargetY + ", out of bounds");
 			Destroy(this.gameObject);
 			return;
@@ -36,7 +36,7 @@ public class Bullet : MonoBehaviour {
 			return;
 		};
 		if (Type == PConst.BType_Cannon) {
-			HexTile __tl = ctx.FieldCells[__y, __x];
+			HexTile __tl = ctx.Field.Get(__x, __y);
 			if (__tl.Type == PConst.TType_Mountain) {
 				Debug.Log("Destroying due to mountain hit - " + __x + ":" + __y);
 				Destroy(this.gameObject);

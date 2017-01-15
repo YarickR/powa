@@ -23,12 +23,12 @@ public class FightUIScripts : MonoBehaviour {
 			ctx.User.EOTLevel = PConst.EOT_Hard;
 			ctx.User.EOMTS = UnityEngine.Time.time;
 		};
-//		ctx.Send_END_TURN();
-//		ctx.setEndTurnIndicator();
+		ctx.Send_END_TURN();
+		ctx.User.setEndTurnIndicator(ctx.User.EOTLevel);
 	}
 
 	public void AttackClick() {
 		GCTX ctx = GCTX.Instance;
-//		ctx.ToggleAttack(ctx.SelectedVehicle ? !ctx.SelectedVehicle.AttackMode : false);
+		ctx.ToggleAttack(ctx.SelectedVehicle ? !ctx.SelectedVehicle.AttackMode : false);
 	}
 }

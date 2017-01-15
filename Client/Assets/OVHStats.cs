@@ -4,13 +4,13 @@ using System.Collections;
 
 public class OVHStats : MonoBehaviour {
 	public Slider TUS, Armor;
+	public Camera Cam;
 	// Use this for initialization
 	void Start () {
 	
 	}
 	
-	// Update is called once per frame
-	void Update () {
-	
-	}
-}
+	void Update() {
+		//transform.LookAt(transform.position + Cam.transform.rotation * Vector3.forward, Cam.transform.rotation * Vector3.up);
+    }
+  }

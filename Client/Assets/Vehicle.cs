@@ -39,6 +39,9 @@ public class Vehicle : MonoBehaviour {
 	private float _flashStopTS;
 	private Collider _collider;
 	private RectTransform _ovht; // UnitStats panel transform
+	private Renderer _renderer;
+	private Vector3[] _bbCorners; // bounding box corners 
+	private float[,] _mmXYZ; // min,max x,y,z
 
 	public Material[] Materials { get { return _allMaterials; } }
 	public static float rect2hexX(int x, int y) {
@@ -89,19 +92,28 @@ public class Vehicle : MonoBehaviour {
 		GCTX ctx = GCTX.Instance;
 		GameObject __c = GameObject.Find("EyeSocket/Eye");
 		_eye = __c.GetComponent<Camera>();
-		Vector3 __usWC = new Vector3(transform.position.x, transform.position.y, transform.position.z); //World coordinates
-		Vector3 __usSC = _eye.WorldToScreenPoint(__usWC); // Screen coordinates
 		if (PlayerId == ctx.User.GlobalId) {
-			_ovh = (GameObject)Instantiate(OVHStats, __usSC, Quaternion.identity);
-			GameObject __cvs = GameObject.Find("/UI/FightUIPanel") ;
-			_ovh.transform.SetParent(__cvs.transform, false);
+			_ovh = Instantiate(OVHStats) as GameObject;
+			GameObject __fui = ctx.FightUI ;
+			_ovh.transform.SetParent(GameObject.Find("UI").transform, false);
 			_ovht = _ovh.GetComponent<RectTransform>();
 			_ovhs = _ovh.GetComponent<OVHStats>();
-			GameObject __up = __cvs.transform.Find("UnitsPanel").gameObject;
-			_usp = (GameObject)Instantiate(UnitStats, new Vector3(0, 0, 0), Quaternion.identity);
+			_ovhs.Cam = _eye;
+			GameObject __up = __fui.transform.Find("UnitsPanel").gameObject;
+			_usp = Instantiate(UnitStats) as GameObject;
 			_usp.transform.SetParent(__up.transform, false);
 			_usps = _usp.GetComponent<UnitStats>();
 			_usps.UnitPic.sprite = GetComponent<SpriteRenderer>().sprite;
+			_renderer = GetComponent<Renderer>();
+			if (_renderer == null) {
+				Debug.Log("No renderer for this object");
+			} else {
+				_bbCorners = new Vector3[8];
+				for (__i = 0 ; __i < 8 ; __i++) {
+					_bbCorners[__i] = new Vector3(0, 0, 0);
+				};
+				_mmXYZ = new float[2,3];
+			}
 		} else {
 			_ovh = null;
 			_usp = null;
@@ -109,9 +121,46 @@ public class Vehicle : MonoBehaviour {
 		_collider = GetComponent<Collider>();
 		ShowUnitStats();
 	}
-	
+
+	Vector3 GetHUDPoint() {
+		float __minX, __minY, __maxX, __maxY;
+		_mmXYZ[0, 0] = Mathf.Min(_renderer.bounds.min.x, _renderer.bounds.max.x);
+		_mmXYZ[0, 1] = Mathf.Min(_renderer.bounds.min.y, _renderer.bounds.max.y);
+		_mmXYZ[0, 2] = Mathf.Min(_renderer.bounds.min.z, _renderer.bounds.max.z);
+		_mmXYZ[1, 0] = Mathf.Max(_renderer.bounds.min.x, _renderer.bounds.max.x);
+		_mmXYZ[1, 1] = Mathf.Max(_renderer.bounds.min.y, _renderer.bounds.max.y);
+		_mmXYZ[1, 2] = Mathf.Max(_renderer.bounds.min.z, _renderer.bounds.max.z);
+		__minX = -1;
+		__minY = -1;
+		__maxX = -1;
+		__maxY = -1;
+		Vector3 __tempVec = new Vector3(0, 0, 0);
+		Vector3 __w2s = new Vector3(0, 0, 0);
+		Vector3 __ret = new Vector3(0, 0, 0);
+		for (int __x = 0; __x <= 1 ; __x++) {
+			for (int __y = 0; __y <= 1; __y++) {
+				for (int __z = 0; __z <= 1; __z++) {
+					__tempVec.x = _mmXYZ[__x, 0];
+					__tempVec.y = _mmXYZ[__y, 1];
+					__tempVec.z = _mmXYZ[__z, 2];
+					__w2s = Camera.main.WorldToScreenPoint(__tempVec);
+					__minX = __minX == -1 ? __w2s.x : Mathf.Min(__minX, __w2s.x);
+					__maxX = __maxX == -1 ? __w2s.x : Mathf.Max(__maxX, __w2s.x); 
+					__minY = __minY == -1 ? __w2s.y : Mathf.Min(__minY, __w2s.y);
+					__maxY = __maxY == -1 ? __w2s.y : Mathf.Max(__maxY, __w2s.y); 
+				};
+			};
+		};
+		__ret.x =  __minX + ((__maxX - __minX) / 2);
+		__ret.y =  __maxY - ((__maxY - __minY) / 4);
+		__ret.z =  __w2s.z;
+		return __ret;
+	}
 	// Update is called once per frame
 	void Update () {
+		if (_ovh) {
+	    	_ovh.transform.position = GetHUDPoint();
+		};
 		if (_flashStopTS != 0) {
 			if ( _flashStopTS < UnityEngine.Time.time ) {
 				for (int __i = 0; __i < _allMaterials.GetLength(0); __i++) {
@@ -122,7 +171,16 @@ public class Vehicle : MonoBehaviour {
 		};
 	}
 
-
+	public void Cleanup() {
+		if (_ovh) {
+			GameObject.Destroy(_ovh);
+			_ovh = null;
+		}
+		if (_usp) {
+			GameObject.Destroy(_usp);
+			_usp = null;
+		};
+	}
 	public void Flash(float delay, Color newColor) {
 		for (int __i = 0; __i < _allMaterials.GetLength(0); __i++) {
 			_allMaterials[__i].SetColor("_EmissionColor", newColor);
@@ -133,10 +191,10 @@ public class Vehicle : MonoBehaviour {
 	public void MoveTo(int newX, int newY) {
 
 		GCTX ctx = GCTX.Instance;
-		ctx.FieldCells[Y, X].Occupied = false;
+		ctx.Field.Get(X, Y).Occupied = false;
 		transform.position = new Vector3(rect2hexX(newX, newY), (float)0.01, rect2hexY(newX, newY));
 		transform.rotation = Quaternion.identity;
-		ctx.FieldCells[newY, newX].Occupied = true;
+		ctx.Field.Get(newX, newY).Occupied = true;
 		X = newX;
 		Y = newY;
 	}
@@ -151,7 +209,7 @@ public class Vehicle : MonoBehaviour {
 		GCTX ctx = GCTX.Instance;
 		PPoint __p = Path[PathStep];
 		LastMoveTS = UnityEngine.Time.time;
-		ctx.FieldCells[Y, X].GetComponent<SpriteRenderer>().color = Color.white;
+		ctx.Field.Get(X, Y).GetComponent<SpriteRenderer>().color = Color.white;
 		PathStep++;
 		Time--;
 		MoveTo(__p.X, __p.Y);
@@ -162,62 +220,42 @@ public class Vehicle : MonoBehaviour {
 
 	void OnMouseDown() {
 		GCTX ctx = GCTX.Instance;
-		if (ctx.User.GlobalId != PlayerId) {
-			return;
-		};
 		if (ctx.SelectedVehicle != null) {
-			Vehicle __vh = ctx.SelectedVehicle.GetComponent<Vehicle>();
-			if ((__vh.AttackMode) && (ctx.SelectedVehicle != this.gameObject) && (__vh.PlayerId != PlayerId)) {
-				__vh.Shoot(X, Y, this, null);
+			if (ctx.SelectedVehicle.AttackMode && (ctx.SelectedVehicle.PlayerId != PlayerId)) {
+				ctx.SelectedVehicle.Shoot(X, Y, this, null);
 				return;
 			};
-			ctx.UnselectVehicle(ctx.SelectedVehicle);
 		};
-		ctx.SelectedVehicle = this;
-		ctx.SelectVehicle(this);
+		if (PlayerId == ctx.User.GlobalId) {
+			if (ctx.SelectedVehicle && ctx.SelectedVehicle.Id != Id) {
+				ctx.UnselectVehicle(ctx.SelectedVehicle);
+			};
+			ctx.SelectedVehicle = this;
+			ctx.SelectVehicle(this);
+		};
 	}
 
 	void OnMouseUp() {
 		
 	}
 
-	public int FindPathPoint(int pX, int pY) {
-		if (Path.Count == 0) {
-			return -1;
-		};
-		if ((pX == X) && (pY == Y)) {
-			return 0;
-		};
-		for (int __i = 0; __i < Path.Count; __i++) {
-			if ((Path[__i].X == pX) && (Path[__i].Y == pY)) {
-				return __i;
-			};
-		};
-		return -1;
-	}
-	public void RemovePathPoints(int startIdx) {
-		GCTX ctx = GCTX.Instance;
-		while (Path.Count > startIdx) {
-			int __x = Path[Path.Count - 1].X;
-			int __y = Path[Path.Count - 1].Y;
-			ctx.FieldCells[__y, __x].GetComponent<SpriteRenderer>().color = Color.white;
-			Path.RemoveAt(Path.Count - 1);
-		};
-	}
-
 	public bool Shoot(int tgtX, int tgtY, Vehicle vh, JSONClass cmd) {
 		GCTX ctx = GCTX.Instance;
+		Debug.Log("Shoot");
 		if ((Armor <= 0) || (Time < ShotTU) || !ctx.HisMoveNow(PlayerId)) {
 			return false;
 		};
 		if ((Type == PConst.VType_LightRanged) || (Type == PConst.VType_Medium)) {
 			if (vh == null) {
+				Debug.Log("Shooting without target");
 				return false;
 			};
-			tgtX = vh.GetComponent<Vehicle>().X;
-			tgtY = vh.GetComponent<Vehicle>().Y;
+			tgtX = vh.X;
+			tgtY = vh.Y;
 		};
-		if (!ctx.FieldCells[tgtY, tgtX].Highlighted) {
+		float __dist = Mathf.Ceil(Mathf.Sqrt((X - tgtX) * (X - tgtX) + (Y - tgtY) * ( Y - tgtY)));
+		if (__dist > Distance) {
+			Debug.Log("Not in range");
 			return false;
 		};
 		Vector3 __v = new Vector3(rect2hexX(X, Y), 1, rect2hexY(X, Y));
@@ -254,12 +292,13 @@ public class Vehicle : MonoBehaviour {
 		if (PlayerId == ctx.User.GlobalId) {
 			ctx.Send_VEHICLE_ATTACK(this, vh, tgtX, tgtY);
 		};
-		if (ctx.SelectedVehicle == this.gameObject) {
+		if (ctx.SelectedVehicle.Id == Id) {
 			ShowVehicleInfo();
 		};
 		AttackMode = false;
 		ctx.ToggleAttack(false);
 		ctx.ShootingVehicle = this;
+		Debug.Log("Fired");
 		return true;
 	}
 
@@ -320,5 +359,23 @@ public class Vehicle : MonoBehaviour {
 		Time = MaxTime;
 		ShowUnitStats();
 	}
-	
+
+	public void ShowPath(int maxAllowedLength) {
+		GCTX ctx = GCTX.Instance;
+		List<PPoint>.Enumerator __ptr = Path.GetEnumerator();
+		while (__ptr.MoveNext()) {
+			HexTile __t = ctx.Field.Get(__ptr.Current.X, __ptr.Current.Y);
+			__t.GetComponent<SpriteRenderer>().color = maxAllowedLength > 0 ? new Color (1,1,1,0.2f) : new Color (1, 0, 0, 0.2f);
+			maxAllowedLength--;
+		};
+	}
+
+	public void HidePath() {
+		GCTX ctx = GCTX.Instance;
+		List<PPoint>.Enumerator __ptr = Path.GetEnumerator();
+		while (__ptr.MoveNext()) {
+			HexTile __t = ctx.Field.Get(__ptr.Current.X, __ptr.Current.Y);
+			__t.GetComponent<SpriteRenderer>().color = Color.white;
+		};
+	}
 }

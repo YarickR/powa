@@ -12,7 +12,7 @@ using SimpleJSON;
 public class GCTX : Singleton<GCTX> {
 	protected GCTX () {} 
 
-	public HexTile[,] FieldCells = null;
+	public PField Field = null;
 	public List<PPlayer> Players;
 	public List<JSONClass> ServerCommands;
 	public PPlayer User = null;
@@ -52,34 +52,6 @@ public class GCTX : Singleton<GCTX> {
 		GetPlayerId();
 	}
 
-
-	public PPoint FindFreeCell(int xMin, int xMax, int yMin, int yMax) {
-		PPoint ret;
-		ret.X = -1; ret.Y = -1;
-		int __counter = 100;
-		do {
-			int __y = UnityEngine.Random.Range(yMin, yMax + 1);
-			if ((__y < 0) || (__y >= FieldCells.GetLength(0))) {
-				continue;
-			};
-			int __x = UnityEngine.Random.Range(xMin, xMax + 1);
-			if ((__x < 0) || (__x >= FieldCells.GetLength(1))) {
-				continue;
-			};
-			if (FieldCells[__y, __x].Occupied) {
-				continue;
-			};
-			if (((FieldCells[__y, __x].Type >= PConst.TType_Desert) && 
-				 (FieldCells[__y, __x].Type <= PConst.TType_Marsh)) ||
-				 (FieldCells[__y, __x].Type == PConst.TType_Plain)) {
-					ret.X = __x;
-					ret.Y = __y;
-					return ret;
-			};
-		} while (__counter-- > 0);
-		return ret;
-	}
-
 	public GameObject FindVehicleByPos(int x, int y, List<GameObject> list) {
 		for (int __i = 0; __i < list.Count; __i++) {
 			Vehicle __vh = list[__i].GetComponent<Vehicle>();
@@ -112,43 +84,43 @@ public class GCTX : Singleton<GCTX> {
 	}
 
 	public void SetupField(string fieldDescr, int fieldSize) {
-		if (FieldCells == null) {
-			FieldCells = new HexTile[fieldSize, fieldSize];
+		if (Field == null) {
+			Field = new PField(fieldSize, fieldSize);
 		};
 		HexTile __tile = Resources.Load<HexTile>("HexTile");
 
-		for (int __h = 0; __h < fieldSize; __h++) {
-			for (int __w = 0; __w < fieldSize; __w++) {
+		for (int __y = 0; __y < Field.Height; __y++) {
+			for (int __x = 0; __x < Field.Width; __x++) {
 				
 				HexTile __t;
-				Vector3 __v = new Vector3(Vehicle.rect2hexX(__w, __h), (float)(__h * 0.01), Vehicle.rect2hexY(__w, __h));
+				Vector3 __v = new Vector3(Vehicle.rect2hexX(__x, __y), (float)(__y * 0.01), Vehicle.rect2hexY(__x, __y));
 				__t = ( HexTile)Instantiate(__tile,  __v, Quaternion.Euler(90, 0, 0));
-				string __ts = fieldDescr.Substring((__h * fieldSize + __w) * 2, 2);
-				__t.X = __w;
-				__t.Y = __h;
+				string __ts = fieldDescr.Substring((__y * Field.Height + __x) * 2, 2);
+				__t.X = __x;
+				__t.Y = __y;
 				__t.Type = Convert.ToInt32(__ts, 16);
-				FieldCells[__h, __w] = __t;
+				Field.Set(__x, __y, __t);
 			};
 		};
 
 		Sprite[] __hexTiles = Resources.LoadAll<Sprite>("Terrain");
-		for (int __h = 0; __h < FieldCells.GetLength(0); __h++) {
-			for (int __w = 0; __w < FieldCells.GetLength(1); __w++) {
-				HexTile __t = FieldCells [__h, __w];
+		for (int __y = 0; __y < Field.Height; __y++) {
+			for (int __x = 0; __x < Field.Width; __x++) {
+				HexTile __t = Field.Get(__x, __y);
 				__t.GetComponent<SpriteRenderer> ().sprite = __hexTiles [(__t.Type * 4) + UnityEngine.Random.Range(0, 4)];
 			};
 		};
 	}
 
 	public void CleanupField() {
-		if (FieldCells != null) {
-			for (int __h = 0; __h < FieldCells.GetLength(0); __h++) {
-				for (int __w = 0; __w < FieldCells.GetLength(1); __w++) {
-					Destroy(FieldCells[__h, __w].gameObject);
-					FieldCells[__h, __w] = null;
+		if (Field != null) {
+			for (int __y = 0; __y < Field.Height; __y++) {
+				for (int __x = 0; __x < Field.Width; __x++) {
+					Destroy(Field.Get(__x, __y).gameObject);
 				};
 			};
-			FieldCells = null;
+			Field.Cleanup();
+			Field = null;
 		}; // Let GC do the rest
 		Camera __c = GameObject.Find("EyeSocket/Eye").GetComponent<Camera>();
 		__c.transform.localPosition = _lobbyCamPos;
@@ -183,7 +155,7 @@ public class GCTX : Singleton<GCTX> {
 			} else {
 				__p = new PPlayer (__plr["money"].AsInt, __pos, __c );
 				__p.GlobalId = __plr["id"].AsInt;
-				__p.Name = __plr["name"].Value;
+				__p.Name = WWW.UnEscapeURL(__plr["name"].Value);
 			};
 			Players.Add(__p);
 			__p.PlayerId = __pos;
@@ -242,20 +214,16 @@ public class GCTX : Singleton<GCTX> {
 		ToggleAttack(false);
 	}
 
-	public void setEndTurnIndicator() {
-		Timer.transform.Find("Text").gameObject.GetComponent<Text>().color = User.EOTLevel == PConst.EOT_None ? Color.white : Color.red;
-	}
-
 	public void UnselectVehicle(Vehicle vh) {
-		vh.Path.ForEach(delegate (PPoint pp) { FieldCells[pp.Y, pp.X].GetComponent<SpriteRenderer>().color = Color.white; });
+		vh.Path.ForEach(delegate (PPoint pp) { Field.Get(pp.X, pp.Y).GetComponent<SpriteRenderer>().color = Color.white; });
 		vh.Path.Clear();
-		FieldCells[vh.Y, vh.X].GetComponent<SpriteRenderer>().color = Color.white;
+		Field.Get(vh.X, vh.Y).GetComponent<SpriteRenderer>().color = Color.white;
 		vh.AttackMode = false;
 		ToggleAttack(false);
 	}
 
 	public void SelectVehicle(Vehicle vh) {
-		FieldCells[vh.Y, vh.X].GetComponent<SpriteRenderer>().color = new Color (1,1,1,0.2f);
+		Field.Get(vh.X, vh.Y).GetComponent<SpriteRenderer>().color = new Color (1,1,1,0.2f);
 		vh.ShowVehicleInfo();
 		vh.AttackMode = false;
 		ToggleAttack(false);
@@ -265,16 +233,15 @@ public class GCTX : Singleton<GCTX> {
 		if (SelectedVehicle == null) {
 			return;
 		};
-		return;
 		Vehicle __vh = SelectedVehicle;
-		GameObject __o = GameObject.Find("Canvas/AttackButton");
+		GameObject __o = FightUI.transform.Find("AttackPanel").gameObject;
 		Image __btnImg = __o.GetComponent<Image>();
 		if (!on) {
 			__vh.AttackMode = false;
 			__btnImg.color = Color.white;
-			for (int __y = 0; __y < FieldCells.GetLength(0); __y++) {
-				for (int __x = 0; __x < FieldCells.GetLength(1); __x++) {
-					FieldCells[__y, __x].Highlight(false, Color.white);
+			for (int __y = 0; __y < Field.Height; __y++) {
+				for (int __x = 0; __x < Field.Width; __x++) {
+					Field.Get(__x, __y).Highlight(false, Color.white);
 				};
 			};
 		} else {
@@ -283,11 +250,11 @@ public class GCTX : Singleton<GCTX> {
 			};
 			__vh.AttackMode = true;
 			__btnImg.color = Color.red;
-			for (int __y = 0; __y < FieldCells.GetLength(0); __y++) {
-				for (int __x = 0; __x < FieldCells.GetLength(1); __x++) {
+			for (int __y = 0; __y < Field.Height; __y++) {
+				for (int __x = 0; __x < Field.Width; __x++) {
 					int __dist = Mathf.RoundToInt(Mathf.Sqrt(Math.Abs(__y - __vh.Y) * Math.Abs(__y - __vh.Y) + Math.Abs(__x - __vh.X) * Math.Abs(__x - __vh.X)));
 					if (__dist <= __vh.Distance) {
-						FieldCells[__y, __x].Highlight(true, new Color(1,1,1,0.5f));
+						Field.Get(__x, __y).Highlight(true, new Color(1,1,1,0.5f));
 					};
 				};
 			};
@@ -602,9 +569,7 @@ public class GCTX : Singleton<GCTX> {
 						if (p.EOTLevel != 0) {
 							p.EOMTS = UnityEngine.Time.time;
 						};
-						if (__pId == User.GlobalId) {
-							setEndTurnIndicator();
-						};
+						p.setEndTurnIndicator(p.EOTLevel);
 					};
 				});
 				c["state"].AsInt = PCmdState.DONE;
@@ -613,7 +578,6 @@ public class GCTX : Singleton<GCTX> {
 				Debug.Log("NEXT_TURN");
 				int __apId = c["data"]["active_player"].AsInt;
 				Players.ForEach(delegate(PPlayer p) { p.NextTurn(); } );
-				setEndTurnIndicator();
 				PassTheMove(__apId, false);
 				c["state"].AsInt = PCmdState.DONE;
 				break;
@@ -658,7 +622,7 @@ public class GCTX : Singleton<GCTX> {
 			if ((__vh.Path.Count < 1) || (__vh.PathStep > __vh.Path.Count - 1)) {
 				__vh.FinishMove();
 				MovingVehicle = null;
-				FieldCells[__vh.Y, __vh.X].GetComponent<SpriteRenderer>().color = Color.white;
+				Field.Get(__vh.X, __vh.Y).GetComponent<SpriteRenderer>().color = Color.white;
 				if (__vh.MoveCommand != null) {
 					/* We've moved the vehicle due to server command */
 					__vh.MoveCommand["state"].AsInt = PCmdState.DONE;

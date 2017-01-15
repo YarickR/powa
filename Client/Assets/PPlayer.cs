@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UI;
 public class PPlayer
 {
 	public int Money 		{ get; set;	}
@@ -2752,31 +2753,37 @@ public class PPlayer
 	public void NextTurn() {
 		EOTLevel = PConst.EOT_None;
 		Units.ForEach(delegate (Vehicle v) { v.NextTurn(); } );
+		setEndTurnIndicator(EOTLevel);
 	}
 	public void Setup(int UserPlayerId) {
 		GCTX ctx = GCTX.Instance;
 		int[,] __ppm = new int[4,4] {{0,1,2,3},{1,0,3,2},{3,2,0,1},{2,3,1,0}};
-		if (PlayerId != UserPlayerId) {
-			int __pId = __ppm[UserPlayerId,PlayerId];
-			if (__pId == 0) {
-				Debug.LogError("Bad Math");
-			} else {
-				GameObject __op = ctx.FightUI.transform.Find("OpponentPanel" + __pId).gameObject;
-				if (__op) {
-					__op.SetActive(true);
-					_opPanel = __op.GetComponent<OpponentPanel>();	
-					_opPanel.UserName.text = Name;
-					_opPanel.Level.text = "1";
-				
-				};
-			};
+		int __pId = __ppm[UserPlayerId,PlayerId];
+		GameObject __op = ctx.FightUI.transform.Find("OpponentPanel" + __pId).gameObject;
+		if (__op) {
+			__op.SetActive(true);
+			_opPanel = __op.GetComponent<OpponentPanel>();	
+			_opPanel.UserName.text = Name;
+			_opPanel.Level.text = "1";
+		
 		};
 	}
 	public void Cleanup() {
-		Units.ForEach(delegate(Vehicle __v) { GameObject.Destroy(__v.gameObject); } ); 
+		Units.ForEach(delegate(Vehicle __v) { __v.Cleanup(); GameObject.Destroy(__v.gameObject); } ); 
 		Units.Clear(); 
 		if (_opPanel) {
 			_opPanel.gameObject.SetActive(false);
+		};
+	}
+
+
+	public void setEndTurnIndicator(int EOTLevel) {
+		GCTX ctx = GCTX.Instance;
+		int[,] __ppm = new int[4,4] {{0,1,2,3},{1,0,3,2},{3,2,0,1},{2,3,1,0}};
+		int __pId = __ppm[ctx.User.PlayerId,PlayerId];
+		GameObject __op = ctx.FightUI.transform.Find("OpponentPanel" + __pId).gameObject;
+		if (__op) {
+			__op.gameObject.GetComponent<Image>().color = EOTLevel == PConst.EOT_None ? Color.white : Color.red;
 		};
 	}
 }
