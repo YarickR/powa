@@ -35,6 +35,9 @@ public class HexTile : MonoBehaviour {
 	void Update () {
 	
 	}
+	public override  string ToString() {
+		return System.String.Format("C({0}x{1})", X, Y);
+	}
 
 	public bool adjacentTo(int aX, int aY) {
 		for (int __i = 0; __i < 6; __i++) {
@@ -62,74 +65,37 @@ public class HexTile : MonoBehaviour {
 	}
 
 	void OnMouseEnter() {
-	/*
-		if (!Input.GetButton("Left") || Occupied || (Type == PConst.TType_Mountain)) {
-			return;
-		};
 
-		GCTX ctx = GCTX.Instance;
-
-		if (ctx.SelectedVehicle == null) {
-			return;
-		};
-		Vehicle __vh = ctx.SelectedVehicle;
-		if (__vh.PlayerId != ctx.User.GlobalId) {
-			return;
-		};
-		int __aX = __vh.X;
-		int __aY = __vh.Y;
-		if (__vh.Path.Count > 0) {
-			__aX = __vh.Path[__vh.Path.Count - 1].X;
-			__aY = __vh.Path[__vh.Path.Count - 1].Y;
-		};
-		if (!adjacentTo(__aX, __aY)) {
-			return;
-		};
-		if (__vh.Path.Count >= __vh.Time) {
-			return;
-		};
-		if (__vh.Armor <= 0) {
-			return;
-		};
-		int __i = __vh.FindPathPoint(X, Y);
-		if (__i == -1) { // This is new point
-			PPoint __p = new PPoint();
-			__p.X = X;
-			__p.Y = Y;
-			__vh.Path.Add(__p);
-		} else {
-			__vh.RemovePathPoints(__i + 1);
-		};
-		GetComponent<SpriteRenderer>().color = new Color (1,1,1,0.2f);
-		*/
 	}
 
-	void OnMouseExit() {
+	public void OnMouseExit() {
 		
 	}
 
-	void OnMouseDown() {
+	public void OnMouseDown() {
 		GCTX ctx = GCTX.Instance;
 
 
 		if (ctx.SelectedVehicle == null) {
+			GCTX.Log(ToString() + " - no selected vehicle");
 			return;
 		};
 		Vehicle __vh = ctx.SelectedVehicle;
 		if (__vh.PlayerId != ctx.User.GlobalId) {
-			Debug.Log("Not your vehicle");
+			GCTX.Log(ToString() + " - not your vehicle");
 			return;
 		};
 		if (!ctx.ActivityLock) {
-			Debug.Log("Not your move");
+			GCTX.Log(ToString() + " - not your move");
 			return;
 		};
 
 		if (__vh.Armor == 0) {
-			Debug.Log("This vehicle is dead");
+			GCTX.Log(ToString() + " - this vehicle is dead");
 			return;
 		};
 		if (((__vh.Type == PConst.VType_Light) || (__vh.Type == PConst.VType_MediumRanged)) && __vh.AttackMode) {
+			GCTX.Log(ToString() + " - shooting AOE");
 			__vh.Shoot(X, Y, null, null);
 			return;
 		};
@@ -138,33 +104,34 @@ public class HexTile : MonoBehaviour {
 		if (__newPath.Count > 0) {
 			if ((__newPath.Count == __vh.Path.Count) && 
 				(__newPath[0] == __vh.Path[__vh.Path.Count - 1])) { // We're getting last to first list of points from A* algo 
+				GCTX.Log(ToString() + "- preparing movement");
 				ctx.MovingVehicle = ctx.SelectedVehicle;
 				__vh.PathStep = 0;
 				__vh.LastMoveTS = 0;
+				int __pcc = __vh.Time;
+				bool __pe;
+				__newPath.Clear();
+				List<PPoint>.Enumerator __p = __vh.Path.GetEnumerator();
+				__pe = __p.MoveNext();
+				while ((__pcc > 0) && __pe ) {
+					__pcc--; // Actually we need to decrease path cost counter according to the cost of moving between those path points. 
+					__newPath.Add(__p.Current);
+					__pe = __p.MoveNext();
+				};
+				if (__pe) {
+					__vh.HidePath(__p);
+				};
+				__vh.Path = __newPath;
 			} else {
+				GCTX.Log(ToString() + " - displaying path");
 				__vh.HidePath();
 				__newPath.Reverse();
 				__vh.Path = __newPath;
 				__vh.ShowPath(__vh.Time);
 			};
-		};
-		/*
-		bool __found = false;
-		int __i;
-		for (__i = 0; __i < __vh.Path.Count; __i++) {
-			if (!__found && ((__vh.Path[__i].X == X) && (__vh.Path[__i].Y == Y))) {
-				__found = true;	
-				break;
-			};
-		};
-		if (!__found) {
-			return;
-		};
-		__vh.RemovePathPoints(__i + 1);
-		ctx.MovingVehicle = ctx.SelectedVehicle;
-		__vh.PathStep = 0;
-		__vh.LastMoveTS = 0;
-		*/
+		} else {
+			GCTX.Log(ToString() + " - was unable to find a path from " + ctx.SelectedVehicle.ToString());
+		}
 	}
 
 	public void Highlight(bool hl, Color hlColor) {
@@ -173,5 +140,10 @@ public class HexTile : MonoBehaviour {
 		};
 		Highlighted = hl;
 		GetComponent<SpriteRenderer>().color = hlColor;
+	}
+
+	public bool Passable() {
+		return (((Type >= PConst.TType_Desert) && (Type <= PConst.TType_Marsh)) || 
+				(Type == PConst.TType_Plain));
 	}
 }

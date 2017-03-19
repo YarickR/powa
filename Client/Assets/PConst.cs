@@ -32,8 +32,8 @@
 
 public static class PCmds
 {
-   	public const int START_MATCH     = 1;
-	public const int END_MATCH       = 2;
+   	public const int START_FIGHT     = 1;
+	public const int END_FIGHT       = 2;
 	public const int VEHICLE_POS     = 3;
 	public const int VEHICLE_MOVE    = 4;
 	public const int VEHICLE_ATTACK  = 5;
@@ -54,7 +54,7 @@ public static class PCmdFlags {
 	public const int PARALLEL	= 1;
 }
 
-public static class MATCH_STATE
+public static class FIGHT_STATE
 {
 	public const int LOBBY		 = 1;
 	public const int PREPARING   = 2;

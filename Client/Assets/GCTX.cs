@@ -5,11 +5,13 @@ using System;
 using System.Reflection;
 using System.Text;
 using System.Collections.Generic;
+using System.Diagnostics;
 using UnityEngine.Networking;
 using SimpleJSON;
 
-
 public class GCTX : Singleton<GCTX> {
+
+
 	protected GCTX () {} 
 
 	public PField Field = null;
@@ -18,15 +20,32 @@ public class GCTX : Singleton<GCTX> {
 	public PPlayer User = null;
 	public int UserId = 0;
 	public int CurrentMovePlayerId = 0;
-	public int MatchState = 0;
+	public int FightState = 0;
 	public Vehicle SelectedVehicle, MovingVehicle, ShootingVehicle;
 	public GameObject Lobby, FightUI, Timer;
-	public bool ActivityLock;
+	public bool ActivityLock, AI;
+
 	private IEnumerator _longPollCoro;
 	private ulong _lastMsgId, _lastCmdId;
 	private float _lastEOMDTS;
 	private Vector3 _lobbyCamPos;
 	private Quaternion _lobbyCamRtr;
+	private AI _aiMgr;
+	public static void Log(object o) {
+		if (Application.isEditor) {
+			string __t =  System.DateTime.Now.ToString() + "(+" + Time.realtimeSinceStartup + " s) " + o.ToString();
+			UnityEngine.Debug.Log(__t);
+		} else {
+			/*
+			string __t = System.Environment.StackTrace.Split('\n')[2];
+			__t = __t.Substring(__t.LastIndexOf(" in "));
+			System.Diagnostics.Debug.WriteLine(String.Format("{0} ({1}) {2}\n\t{3}",System.DateTime.Now.ToString(), Time.realtimeSinceStartup, o.ToString(), __t));
+			*/
+			int __uid = Instance.User != null ? Instance.User.GlobalId : 0;
+			System.Diagnostics.Debug.WriteLine(String.Format("* {0} ({1}) #{2} * {3}",System.DateTime.Now.ToString(), Time.realtimeSinceStartup, __uid, o.ToString()));
+
+		};
+	}
 	public void InitLobby() {
 		_longPollCoro = null;
 		_lastMsgId = 0;
@@ -36,6 +55,7 @@ public class GCTX : Singleton<GCTX> {
 		_lobbyCamRtr = __c.transform.localRotation;
 
 		ActivityLock = false;
+		AI = false;
 		GameObject __ui = GameObject.Find("/UI");
 		Lobby = __ui.transform.Find("LobbyPanel").gameObject;
 		FightUI = __ui.transform.Find("FightUIPanel").gameObject;
@@ -48,7 +68,7 @@ public class GCTX : Singleton<GCTX> {
 			__playerName.GetComponent<Text>().text = User.Name;
 		};
 
-		MatchState = MATCH_STATE.LOBBY;
+		FightState = FIGHT_STATE.LOBBY;
 		GetPlayerId();
 	}
 
@@ -58,6 +78,13 @@ public class GCTX : Singleton<GCTX> {
 			if ((__vh.X == x) && (__vh.Y == y)) {
 				return list[__i];
 			}
+		};
+		return null;
+	}
+
+	public PPlayer FindPlayerByGid(int globalId) {
+		foreach (PPlayer __ret in Players) { 
+			if (__ret.GlobalId == globalId) return __ret ;
 		};
 		return null;
 	}
@@ -99,6 +126,7 @@ public class GCTX : Singleton<GCTX> {
 				__t.X = __x;
 				__t.Y = __y;
 				__t.Type = Convert.ToInt32(__ts, 16);
+				__t.Occupied = !__t.Passable();
 				Field.Set(__x, __y, __t);
 			};
 		};
@@ -130,13 +158,17 @@ public class GCTX : Singleton<GCTX> {
 
 	public void SetupCamera(int playerPos) {
 		Camera __c = GameObject.Find("EyeSocket/Eye").GetComponent<Camera>();
-
+		Light __l = GameObject.Find("EyeSocket/Light").GetComponent<Light>();
 		if (playerPos % 2 != 0) {
 			__c.transform.Translate(new Vector3(0, 0, 55));
 			__c.transform.eulerAngles = new Vector3(60, 180, 0 );
+			__l.transform.Translate(new Vector3(0, 0, 55));
+			__l.transform.eulerAngles = new Vector3(60, 180, 0 );
 		} else {
 			__c.transform.Translate(new Vector3(0, 0, -25));
 			__c.transform.eulerAngles = new Vector3(60, 0, 0);
+			__l.transform.Translate(new Vector3(0, 0, -25));
+			__l.transform.eulerAngles = new Vector3(60, 0, 0);
 		};
 	}
 
@@ -181,7 +213,7 @@ public class GCTX : Singleton<GCTX> {
 				} 
 			});
 			if (__player == null) {
-				Debug.Log("Vehicle for unknown player, skipping");
+				GCTX.Log("Vehicle for unknown player, skipping");
 				continue;
 			};
 			string __pfName = (__player.PlayerId % 2) == 0 ? __prefabNames[__vType] + "Blue" : __prefabNames[__vType] + "Red"; 
@@ -261,7 +293,17 @@ public class GCTX : Singleton<GCTX> {
 		};
 	}
 
-
+	public void ToggleAI() {
+		AI = !AI;
+		GameObject.Find("/UI/UserInfoPanel/LevelSign").GetComponent<Image>().color = AI ? Color.yellow : Color.grey;
+		if (AI) {
+			GCTX.Log(User.Name + " is under AI control");
+			_aiMgr = new AI();
+		} else {
+			_aiMgr = null;
+			GCTX.Log(User.Name + " back to manual");
+		}
+	}
 	public void PassTheMove(int PlayerId, bool next = true) {
 		if (next) {
 			PlayerId = (PlayerId + 1) % Players.Count;
@@ -273,18 +315,18 @@ public class GCTX : Singleton<GCTX> {
 	}
 
 	IEnumerator AsyncReqCoro(string URL, Action<JSONNode> retHandler) {
-		Debug.Log("Going to request " + PConst.Server_URL + URL);
+		GCTX.Log("Going to request " + PConst.Server_URL + URL);
 		WWW __www = new WWW( PConst.Server_URL + URL);
 		while (!__www.isDone) {
 			yield return __www;
 		};
 		if (!string.IsNullOrEmpty(__www.error)) {
-			Debug.Log("Transport error:" + __www.error + " calling " +  PConst.Server_URL + URL);
+			GCTX.Log("Transport error:" + __www.error + " calling " +  PConst.Server_URL + URL);
 		} else {
-			Debug.Log("Got " + __www.text);
+			GCTX.Log("Got " + __www.text);
 			var __r = JSON.Parse(__www.text);
 			if (__r["error"] != null) {	
-				Debug.Log("Lua error " +  __r["error"]["code"].AsInt + ":" + __r["error"]["message"].Value + " calling " + URL );
+				GCTX.Log("Lua error " +  __r["error"]["code"].AsInt + ":" + __r["error"]["message"].Value + " calling " + URL );
 			} else {
 				retHandler(__r);
 			}
@@ -295,7 +337,7 @@ public class GCTX : Singleton<GCTX> {
 		string __u =  "/powa.get_player_id?name=" + WWW.EscapeURL(User.Name);
 		StartCoroutine(AsyncReqCoro(__u, delegate(JSONNode a) {
 			User.GlobalId = a["result"][0][0]["id"].AsInt;
-			RefreshMatchList();
+			RefreshFightList();
 			if (User.GlobalId != 0) {
 				if (_longPollCoro != null) {
 					StopCoroutine(_longPollCoro);
@@ -306,39 +348,39 @@ public class GCTX : Singleton<GCTX> {
 		}));
 	}
 
-	public void RefreshMatchList() {
-		GameObject __glom =  Lobby.transform.Find("GettingListOfMatches").gameObject;
+	public void RefreshFightList() {
+		GameObject __glom =  Lobby.transform.Find("GettingListOfFights").gameObject;
 		__glom.SetActive(true);
-		GameObject __matchPre = Resources.Load<GameObject>("MatchInfo");
-		GameObject __matchListUserInfo = Resources.Load<GameObject>("MatchListUserInfo");
-		string __u = "/powa.get_match_list?id=" + User.GlobalId;
+		GameObject __fightPre = Resources.Load<GameObject>("FightInfo");
+		GameObject __fightListUserInfo = Resources.Load<GameObject>("FightListUserInfo");
+		string __u = "/powa.get_fight_list?id=" + User.GlobalId;
 		StartCoroutine(AsyncReqCoro(__u, delegate(JSONNode a) {
 			__glom.SetActive(false);
-			GameObject __sv = Lobby.transform.Find("MatchList/Viewport/Content").gameObject;
+			GameObject __sv = Lobby.transform.Find("FightList/Viewport/Content").gameObject;
 			for (int __cc = __sv.transform.childCount - 1; __cc >= 0; --__cc) {
 				GameObject.Destroy(__sv.transform.GetChild(__cc).gameObject);
       		};
 			__sv.transform.DetachChildren();
 			int __y = 1;
-			JSONNode __matches = a["result"][0][0]["matches"];
-			foreach (JSONNode __i in __matches.AsArray) {
-				int __matchId = __i["id"].AsInt;
-				GameObject __match = (GameObject)Instantiate(__matchPre, new Vector3(0, 21 - __y * 42, 0), Quaternion.identity);
-				__match.transform.SetParent(__sv.transform, false);
-				__match.GetComponent<MatchInfo>().MatchId = __matchId;
-				GameObject __name = __match.transform.Find("MatchName").gameObject;
+			JSONNode __fights = a["result"][0][0]["fights"];
+			foreach (JSONNode __i in __fights.AsArray) {
+				int __fightId = __i["id"].AsInt;
+				GameObject __fight = (GameObject)Instantiate(__fightPre, new Vector3(0, 21 - __y * 42, 0), Quaternion.identity);
+				__fight.transform.SetParent(__sv.transform, false);
+				__fight.GetComponent<FightInfo>().FightId = __fightId;
+				GameObject __name = __fight.transform.Find("FightName").gameObject;
 				if (__name) {
-					__name.GetComponent<Text>().text = __matchId.ToString();
+					__name.GetComponent<Text>().text = __fightId.ToString();
 				};
 
-				GameObject __matchUsers = __match.transform.Find("MatchUsers").gameObject;
+				GameObject __fightUsers = __fight.transform.Find("FightUsers").gameObject;
 				int __playerNo = 1;
 				foreach (JSONNode __j in __i["players"].AsArray) {
-					GameObject __mlui = (GameObject)Instantiate(__matchListUserInfo, new Vector3(0, 0, 0), Quaternion.identity);
-					__mlui.transform.Find("Level").gameObject.GetComponent<Text>().text = "1";
-					__mlui.transform.Find("UserName").gameObject.GetComponent<Text>().text = WWW.UnEscapeURL(__j.Value);
-					__mlui.transform.SetParent(__matchUsers.transform, false);
-					__mlui.SetActive(true);
+					GameObject __flui = (GameObject)Instantiate(__fightListUserInfo, new Vector3(0, 0, 0), Quaternion.identity);
+					__flui.transform.Find("Level").gameObject.GetComponent<Text>().text = "1";
+					__flui.transform.Find("UserName").gameObject.GetComponent<Text>().text = WWW.UnEscapeURL(__j.Value);
+					__flui.transform.SetParent(__fightUsers.transform, false);
+					__flui.SetActive(true);
 					__playerNo++;
 				};
 				__y++;
@@ -346,46 +388,46 @@ public class GCTX : Singleton<GCTX> {
 		}));
 	}
 
-	public void CreateMatch() {
-		string __u = "/powa.create_match?id=" + User.GlobalId;
+	public void CreateFight() {
+		string __u = "/powa.create_fight?id=" + User.GlobalId;
 		StartCoroutine(AsyncReqCoro(__u, delegate(JSONNode a) {
-			int __matchId = a["result"]["id"].AsInt;
-			RefreshMatchList();
+			int __fightId= a["result"]["id"].AsInt;
+			RefreshFightList();
 		}));
 	}
 
-	public void JoinMatch(int matchId) {
-		if (matchId == 0) {
+	public void JoinFight(int fightId) {
+		if (fightId == 0) {
 			return;
 		};
-		string __u = "/powa.join_match?player_id=" + User.GlobalId + "&match_id=" + matchId;
+		string __u = "/powa.join_fight?player_id=" + User.GlobalId + "&fight_id=" + fightId;
 		StartCoroutine(AsyncReqCoro(__u, delegate(JSONNode a) {
-			int __matchId = a["result"][0][0]["id"].AsInt;
-			if ( __matchId != 0) {
-				RefreshMatchList();
+			int __fightId = a["result"][0][0]["id"].AsInt;
+			if ( __fightId != 0) {
+				RefreshFightList();
 			}
 		}));
 	}
 
-	public void GetMatchData() {
-		string __u = "/powa.get_match_data?player_id=" + User.GlobalId;
+	public void GetFightData() {
+		string __u = "/powa.get_fight_data?player_id=" + User.GlobalId;
 		StartCoroutine(AsyncReqCoro(__u, delegate(JSONNode a) {
 			SetupField(a["result"][0][0]["field"].Value, a["result"][0][0]["size"].AsInt);
 			SetupPlayers(a["result"][0][0]["players"].AsArray);
-			MatchState = MATCH_STATE.RUNNING;
+			FightState = FIGHT_STATE.RUNNING;
 			PassTheMove(a["result"][0][0]["active_player"].AsInt, false);
-			GetMatchVehicles();
+			GetFightVehicles();
 		}));
 	}
-	public void GetMatchVehicles() {
-		string __u = "/powa.get_match_vehicles?player_id=" + User.GlobalId;
+	public void GetFightVehicles() {
+		string __u = "/powa.get_fight_vehicles?player_id=" + User.GlobalId;
 		StartCoroutine(AsyncReqCoro(__u, delegate(JSONNode a) {
 			SetupVehicles(a["result"][0].AsArray);
 		}));
 	}
 
 	IEnumerator CmdCoro(string URL, Action<JSONNode> retHandler) {
-		Debug.Log("Sending command " + PConst.Server_URL + URL);
+		GCTX.Log("Sending command " + PConst.Server_URL + URL);
 		ulong __lastAckCmdId;
 		do {
 			__lastAckCmdId = 0;
@@ -394,12 +436,12 @@ public class GCTX : Singleton<GCTX> {
 				yield return __www;
 			};
 			if (!string.IsNullOrEmpty(__www.error)) {
-				Debug.Log("Transport error " + __www.error + " calling " +  PConst.Server_URL + URL);
+				GCTX.Log("Transport error " + __www.error + " calling " +  PConst.Server_URL + URL);
 			} else {
-				Debug.Log("Got " + __www.text);
+				GCTX.Log("Got " + __www.text);
 				var __r = JSON.Parse(__www.text);
 				if (__r["error"] != null) {	
-					Debug.Log("Lua error " +  __r["error"]["code"].AsInt + ":" + __r["error"]["message"].Value + " calling "+ URL );
+					GCTX.Log("Lua error " +  __r["error"]["code"].AsInt + ":" + __r["error"]["message"].Value + " calling "+ URL );
 					break;
 				} else {
 					__lastAckCmdId = (ulong)__r["result"][0][0].AsInt;
@@ -409,17 +451,19 @@ public class GCTX : Singleton<GCTX> {
 			yield return new WaitForSeconds(1);
 		} while (__lastAckCmdId == 0);
 		if (__lastAckCmdId < _lastCmdId ) {
-			Debug.Log("Last sent command has id " + _lastCmdId + ", last acknowledged id: " + __lastAckCmdId);
+			GCTX.Log("Last sent command has id " + _lastCmdId + ", last acknowledged id: " + __lastAckCmdId);
 		};
 	}
 
-	public void MatchCmd(string data) {
-		string __u =  "/powa.match_cmd?cmd_id=" + ++_lastCmdId + "&player_id=" +  User.GlobalId + "&data=" + data;
+	public void FightCmd(string data) {
+		string __u =  "/powa.fight_cmd?cmd_id=" + ++_lastCmdId + "&player_id=" +  User.GlobalId + "&data=" + data;
 		StartCoroutine(CmdCoro(__u, delegate(JSONNode a) { return ; }));
 	}
 
 	public void Send_VEHICLE_MOVE(Vehicle vh) {
 		string __pathStr = "";
+		// By definition this is sent by the user
+		User.EOMTS = UnityEngine.Time.time;
 		vh.Path.ForEach(delegate(PPoint p) {__pathStr += System.String.Format("{0:X2}{1:X2}", p.X, p.Y);});
 		JSONClass __cmd = new JSONClass();
 		__cmd.Add("cmd", new JSONData((int)PCmds.VEHICLE_MOVE));
@@ -427,18 +471,20 @@ public class GCTX : Singleton<GCTX> {
 		__cmd.Add("vehicle", new JSONData((int)vh.Id));
 		__cmd.Add("path", new JSONData(__pathStr));
 		__cmd.Add("pathlen", new JSONData((int)vh.Path.Count));
-		MatchCmd(__cmd.ToJSON(0));
+		FightCmd(__cmd.ToJSON(0));
 	}
 
 	public void Send_VEHICLE_ATTACK(Vehicle vh, Vehicle target, int tgtX, int tgtY) {
 		JSONClass __cmd = new JSONClass();
+		// By definition this is sent by the user
+		User.EOMTS = UnityEngine.Time.time;
 		__cmd.Add("cmd", new JSONData((int)PCmds.VEHICLE_ATTACK));
 		__cmd.Add("player", new JSONData((int)vh.PlayerId));
 		__cmd.Add("vehicle", new JSONData((int)vh.Id));
 		__cmd.Add("tpid", new JSONData(target != null ? (int)target.PlayerId : (int)0));
 		__cmd.Add("tvid", new JSONData(target != null ? (int)target.Id : (int)0));
 		__cmd.Add("target", new JSONData(System.String.Format("{0:X2}{1:X2}", tgtX, tgtY)));
-		MatchCmd(__cmd.ToJSON(0));
+		FightCmd(__cmd.ToJSON(0));
 	}
 
 	public void Send_END_TURN() {
@@ -446,24 +492,24 @@ public class GCTX : Singleton<GCTX> {
 		__cmd.Add("cmd", new JSONData((int)PCmds.END_TURN));
 		__cmd.Add("player", new JSONData((int)User.GlobalId));
 		__cmd.Add("state", new JSONData((int)User.EOTLevel));
-		MatchCmd(__cmd.ToJSON(0));
+		FightCmd(__cmd.ToJSON(0));
 	}
 
 	IEnumerator LongPoller() {
 		do {
 			string __url = PConst.Server_URL + PConst.LPURL + "?player_id=" + User.GlobalId + "&last_msg_id=" + _lastMsgId;
-			Debug.Log("Going to request " + __url);
+			GCTX.Log("Going to request " + __url);
 			WWW __www = new WWW( __url);
 			while (!__www.isDone) {
 				yield return __www;
 			};
 			if (!string.IsNullOrEmpty(__www.error)) {
-				Debug.Log("Error requesting " +  __url + ", error:" + __www.error);
+				GCTX.Log("Error requesting " +  __url + ", error:" + __www.error);
 				yield return new WaitForSeconds(1);
 			} else {
 				var __r = JSON.Parse(__www.text);
 				if (__r["error"] != null) {	
-					Debug.Log("Called " + __url + ", got error " + __r["error"]["code"].AsInt + ":" + __r["error"]["message"].Value);
+					GCTX.Log("Called " + __url + ", got error " + __r["error"]["code"].AsInt + ":" + __r["error"]["message"].Value);
 					yield return new WaitForSeconds(1);
 				} else {
 					foreach (JSONNode __cmd in __r["result"][0].AsArray) {
@@ -489,7 +535,7 @@ public class GCTX : Singleton<GCTX> {
 				ProcessServerCmd(c.AsObject);
 			};
 			if (c["state"].AsInt == PCmdState.DONE) {
-				Debug.Log("Command has been processed");
+				GCTX.Log("Command has been processed");
 				__rq.Enqueue(__p);
 			};
 			__p++;
@@ -506,19 +552,19 @@ public class GCTX : Singleton<GCTX> {
 		PPoint __pp;
 		c["state"].AsInt = PCmdState.PROCESSING;
 		switch (c["data"]["cmd"].AsInt) {
-			case PCmds.START_MATCH: 
-				Debug.Log("START_MATCH");		
-				MatchState = MATCH_STATE.READY;
-				GetMatchData();
+			case PCmds.START_FIGHT: 
+				GCTX.Log("START_FIGHT");		
+				FightState = FIGHT_STATE.READY;
+				GetFightData();
 				c["state"].AsInt = PCmdState.DONE;
 				break;
 			case PCmds.PASS_MOVE: 
-				Debug.Log("PASS_MOVE");
+				GCTX.Log("PASS_MOVE");
 				PassTheMove(c["data"]["active_player"].AsInt, false);
 				c["state"].AsInt = PCmdState.DONE;
 				break;
 			case PCmds.VEHICLE_MOVE:
-				Debug.Log("VEHICLE_MOVE");
+				GCTX.Log("VEHICLE_MOVE");
 				int __pathLen = c["data"]["pathlen"].AsInt;
 				string __pathStr = c["data"]["path"].Value;
 				__vhId = c["data"]["vehicle"].AsInt;
@@ -538,30 +584,33 @@ public class GCTX : Singleton<GCTX> {
 						/* if something is already moving, let's place it where it belongs and start over */
 						__pp = MovingVehicle.Path[MovingVehicle.Path.Count - 1];
 						MovingVehicle.MoveTo(__pp.X, __pp.Y);
+						MovingVehicle.HidePath();
 						MovingVehicle.Path.Clear();
 					};
 					MovingVehicle = __vh;
+					FindPlayerByGid(__pId).EOMTS = UnityEngine.Time.time;
 				} else {
-					Debug.Log("Can't find vehicle " + __vhId + " belonging to player " + __pId);
+					GCTX.Log("Can't find vehicle " + __vhId + " belonging to player " + __pId);
 					c["state"].AsInt = PCmdState.DONE;
 				};
 				break;
 			case PCmds.VEHICLE_ATTACK:
-				Debug.Log("VEHICLE_ATTACK");
+				GCTX.Log("VEHICLE_ATTACK");
 				__pId = c["data"]["player"].AsInt;
 				__vhId = c["data"]["vehicle"].AsInt;
 				int __tvId = c["data"]["tvid"].AsInt;
 				int __tpId = c["data"]["tpid"].AsInt;
 				int __tgtX = Convert.ToInt32(c["data"]["target"].Value.Substring(0, 2), 16);
-				int __tgtY = Convert.ToInt32(c["data"]["target"].Value.Substring(0, 2), 16);
+				int __tgtY = Convert.ToInt32(c["data"]["target"].Value.Substring(2, 2), 16);
 				__vh = FindVehicleById(__vhId, __pId);
 				__tvh = FindVehicleById(__tvId, __tpId);
 				if (!__vh.Shoot(__tgtX, __tgtY, __tvh, c)) {
 					c["state"].AsInt = PCmdState.DONE;
 				};
+				FindPlayerByGid(__pId).EOMTS = UnityEngine.Time.time;
 				break;
 			case PCmds.END_TURN:
-				Debug.Log("END_TURN");
+				GCTX.Log("END_TURN");
 				__pId = c["data"]["player"].AsInt;
 				Players.ForEach(delegate(PPlayer p) {
 					if (p.GlobalId == __pId) {
@@ -575,15 +624,15 @@ public class GCTX : Singleton<GCTX> {
 				c["state"].AsInt = PCmdState.DONE;
 				break;
 			case PCmds.NEXT_TURN:
-				Debug.Log("NEXT_TURN");
+				GCTX.Log("NEXT_TURN");
 				int __apId = c["data"]["active_player"].AsInt;
 				Players.ForEach(delegate(PPlayer p) { p.NextTurn(); } );
 				PassTheMove(__apId, false);
 				c["state"].AsInt = PCmdState.DONE;
 				break;
-			case PCmds.END_MATCH:
-				Debug.Log("END_MATCH");
-				MatchState = MATCH_STATE.LOBBY;
+			case PCmds.END_FIGHT:
+				GCTX.Log("END_FIGHT");
+				FightState = FIGHT_STATE.LOBBY;
 				CleanupField();
 				CleanupPlayers();
 				c["state"].AsInt = PCmdState.DONE;
@@ -598,28 +647,28 @@ public class GCTX : Singleton<GCTX> {
 		if (ServerCommands.Count > 0) {
 			ProcessServerCmdQueue();
 		};
-		switch (MatchState) {
+		switch (FightState) {
 			case 0: 
 				InitLobby(); return ;
-			case MATCH_STATE.LOBBY:
-			case MATCH_STATE.PREPARING:
+			case FIGHT_STATE.LOBBY:
+			case FIGHT_STATE.PREPARING:
 				if (Lobby.activeSelf == false) Lobby.SetActive(true);
 				if (FightUI.activeSelf == true) FightUI.SetActive(false);
 				return; 
-			case MATCH_STATE.READY:
+			case FIGHT_STATE.READY:
 				if (Lobby.activeSelf == true) Lobby.SetActive(false);
 				if (FightUI.activeSelf == false) FightUI.SetActive(true);
 
 				return;
-			case MATCH_STATE.FINISHED:
+			case FIGHT_STATE.FINISHED:
 				if (Lobby.activeSelf == false) Lobby.SetActive(true);
 				if (FightUI.activeSelf == true) FightUI.SetActive(false);
 				return;
 		};
-		// 	case MATCH_STATE.RUNNING:
+		// 	case FIGHT_STATE.RUNNING:
 		if (MovingVehicle != null) {
 			Vehicle __vh = MovingVehicle;
-			if ((__vh.Path.Count < 1) || (__vh.PathStep > __vh.Path.Count - 1)) {
+			if ((__vh.Path.Count < 1) || (__vh.PathStep > __vh.Path.Count - 1) || (__vh.Time <= 0)) {
 				__vh.FinishMove();
 				MovingVehicle = null;
 				Field.Get(__vh.X, __vh.Y).GetComponent<SpriteRenderer>().color = Color.white;
@@ -642,17 +691,16 @@ public class GCTX : Singleton<GCTX> {
 			//Nothing to do yet
 		} else {
 			PPlayer __p = Players[CurrentMovePlayerId];
-			if (__p.EOMTS != 0) {
-				if (__p.EOMTS >= UnityEngine.Time.time) {
-					float __diff = __p.EOMTS - UnityEngine.Time.time;
-					if (UnityEngine.Time.time - _lastEOMDTS > 0.1) {
-						GameObject __EOMTimer =  Timer.transform.Find("TimerFG").gameObject;
-						float __scale = __diff > PConst.Move_Time ? 1 : Math.Max(__diff / PConst.Move_Time, 0);
-						__EOMTimer.GetComponent<Image>().fillAmount = __scale;
-						_lastEOMDTS = UnityEngine.Time.time;
-						if (ActivityLock != ((__diff > 0 ) & (__p.GlobalId == User.GlobalId))) {
-							ActivityLock = ((__diff > 0 ) & (__p.GlobalId == User.GlobalId));
-						};
+			if (__p.EOMTS >= UnityEngine.Time.time) {
+				float __diff = __p.EOMTS - UnityEngine.Time.time;
+				if (UnityEngine.Time.time - _lastEOMDTS > 0.1) {
+					GameObject __EOMTimer =  Timer.transform.Find("TimerFG").gameObject;
+					float __scale = __diff > PConst.Move_Time ? 1 : Math.Max(__diff / PConst.Move_Time, 0);
+					__EOMTimer.GetComponent<Image>().fillAmount = __scale;
+					_lastEOMDTS = UnityEngine.Time.time;
+					ActivityLock = ((__diff > 0 ) & (__p.GlobalId == User.GlobalId));
+					if ((ActivityLock == true) && (AI == true) && (_aiMgr != null)) {
+						_aiMgr.Step();
 					};
 				};
 			};

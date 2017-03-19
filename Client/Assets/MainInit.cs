@@ -16,7 +16,7 @@ public class MainInit : MonoBehaviour {
 		ctx.MovingVehicle = null;
 		ctx.Players = new List<PPlayer>();
 		ctx.ServerCommands = new List<JSONClass>();
-		ctx.MatchState = 0;
+		ctx.FightState = 0;
 	}
 
 	// Update is called once per frame

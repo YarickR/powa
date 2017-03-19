@@ -27,8 +27,13 @@ public class FightUIScripts : MonoBehaviour {
 		ctx.User.setEndTurnIndicator(ctx.User.EOTLevel);
 	}
 
-	public void AttackClick() {
+	public  void AttackClick() {
 		GCTX ctx = GCTX.Instance;
 		ctx.ToggleAttack(ctx.SelectedVehicle ? !ctx.SelectedVehicle.AttackMode : false);
+	}
+
+	public  void AIClick() {
+		GCTX ctx = GCTX.Instance;
+		ctx.ToggleAI();
 	}
 }

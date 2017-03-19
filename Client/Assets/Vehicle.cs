@@ -58,7 +58,9 @@ public class Vehicle : MonoBehaviour {
 	public static int hex2rectY(float x, float y) {
 		return  (int)Math.Round(y / 1.92);
 	}
-
+	public override string ToString() {
+		return System.String.Format("V#{0}({1}x{2})", Id, X, Y);
+	}
 	// Use this for initialization
 	void Start () {
 		
@@ -106,7 +108,7 @@ public class Vehicle : MonoBehaviour {
 			_usps.UnitPic.sprite = GetComponent<SpriteRenderer>().sprite;
 			_renderer = GetComponent<Renderer>();
 			if (_renderer == null) {
-				Debug.Log("No renderer for this object");
+				GCTX.Log("No renderer for this object");
 			} else {
 				_bbCorners = new Vector3[8];
 				for (__i = 0 ; __i < 8 ; __i++) {
@@ -241,13 +243,13 @@ public class Vehicle : MonoBehaviour {
 
 	public bool Shoot(int tgtX, int tgtY, Vehicle vh, JSONClass cmd) {
 		GCTX ctx = GCTX.Instance;
-		Debug.Log("Shoot");
+		GCTX.Log("Shoot");
 		if ((Armor <= 0) || (Time < ShotTU) || !ctx.HisMoveNow(PlayerId)) {
 			return false;
 		};
 		if ((Type == PConst.VType_LightRanged) || (Type == PConst.VType_Medium)) {
 			if (vh == null) {
-				Debug.Log("Shooting without target");
+				GCTX.Log("Shooting without target");
 				return false;
 			};
 			tgtX = vh.X;
@@ -255,7 +257,7 @@ public class Vehicle : MonoBehaviour {
 		};
 		float __dist = Mathf.Ceil(Mathf.Sqrt((X - tgtX) * (X - tgtX) + (Y - tgtY) * ( Y - tgtY)));
 		if (__dist > Distance) {
-			Debug.Log("Not in range");
+			GCTX.Log("Not in range");
 			return false;
 		};
 		Vector3 __v = new Vector3(rect2hexX(X, Y), 1, rect2hexY(X, Y));
@@ -298,7 +300,7 @@ public class Vehicle : MonoBehaviour {
 		AttackMode = false;
 		ctx.ToggleAttack(false);
 		ctx.ShootingVehicle = this;
-		Debug.Log("Fired");
+		GCTX.Log("Fired");
 		return true;
 	}
 
@@ -308,7 +310,7 @@ public class Vehicle : MonoBehaviour {
 		};
 		GCTX ctx = GCTX.Instance;
 		Armor = Math.Max(0, Armor - dmg);
-		Debug.Log("Dealing " + dmg + " units of damage");
+		GCTX.Log("Dealing " + dmg + " units of damage");
 		if (Armor == 0) {
 			for (int __i = 0; __i < _matEmiColors.GetLength(0); __i++) {
 				_matEmiColors[__i].r /= 3;
@@ -363,7 +365,7 @@ public class Vehicle : MonoBehaviour {
 	public void ShowPath(int maxAllowedLength) {
 		GCTX ctx = GCTX.Instance;
 		List<PPoint>.Enumerator __ptr = Path.GetEnumerator();
-		while (__ptr.MoveNext()) {
+		while (__ptr.MoveNext() ) {
 			HexTile __t = ctx.Field.Get(__ptr.Current.X, __ptr.Current.Y);
 			__t.GetComponent<SpriteRenderer>().color = maxAllowedLength > 0 ? new Color (1,1,1,0.2f) : new Color (1, 0, 0, 0.2f);
 			maxAllowedLength--;
@@ -378,4 +380,35 @@ public class Vehicle : MonoBehaviour {
 			__t.GetComponent<SpriteRenderer>().color = Color.white;
 		};
 	}
+	public void HidePath(List<PPoint>.Enumerator start) {
+		GCTX ctx = GCTX.Instance;
+		do {
+			HexTile __t = ctx.Field.Get(start.Current.X, start.Current.Y);
+			__t.GetComponent<SpriteRenderer>().color = Color.white;
+		} while (start.MoveNext()); 
+	}
+
+	public Vehicle FindTarget() {
+		GCTX ctx = GCTX.Instance;
+		Vehicle __ret = null;
+		int __dist, __minDist ;
+		__minDist = ctx.Field.Width * ctx.Field.Width +  ctx.Field.Height *ctx.Field.Height;
+		foreach (PPlayer __p in ctx.Players) {
+			if (__p.GlobalId == PlayerId)  {
+				continue;
+			};
+			foreach (Vehicle __v in __p.Units) {
+				if (__v.Armor <= 0) {
+					continue;
+				};
+				__dist = (X - __v.X) * (X - __v.X) + (Y - __v.Y) * ( Y - __v.Y);
+				if ((__dist < __minDist) && (Mathf.Sqrt(__dist) < Distance)) {
+					__minDist = __dist;
+					__ret = __v;
+				};
+			};
+		};
+		return __ret;
+	}
+
 }

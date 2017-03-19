@@ -3,6 +3,7 @@ using UnityEngine;
 
 public struct PPoint {
 	public int X, Y;
+	public PPoint(int newX, int newY) { X = newX; Y = newY; }
 	public static bool operator ==(PPoint a, PPoint b) { return (a.X == b.X) && (a.Y == b.Y);  }
 	public static bool operator !=(PPoint a, PPoint b) { return (a.X != b.X) || (a.Y != b.Y);  }
 }
@@ -37,14 +38,14 @@ public class PField {
 			_cells[y, x] = tile;
 			return;
 		};
-		Debug.Log("Bad args " + x + "x" + y);
+		GCTX.Log("Bad args " + x + "x" + y);
 	}
 
 	public HexTile Get(int x, int y) {
 		if ((x >= 0) || (x < Width) || (y >= 0) || (y < Height)) {
 			return _cells[y, x];
 		};
-		Debug.Log("Bad args " + x + "x" + y);
+		GCTX.Log("Bad args " + x + "x" + y);
 		return null;
 	}
 
@@ -52,7 +53,7 @@ public class PField {
 		if ((x >= 0) || (x < Width) || (y >= 0) || (y < Height)) {
 			return _cells[y,x].Occupied;
 		};
-		Debug.Log("Bad args " + x + "x" + y);
+		GCTX.Log("Bad args " + x + "x" + y);
 		return false;
 	}
 
@@ -60,7 +61,7 @@ public class PField {
 		if ((x >= 0) || (x < Width) || (y >= 0) || (y < Height)) {
 			return _cells[y,x].Highlighted;
 		};
-		Debug.Log("Bad args " + x + "x" + y);
+		GCTX.Log("Bad args " + x + "x" + y);
 		return false;
 	}
 
@@ -81,15 +82,10 @@ public class PField {
 			if ((__x < 0) || (__x >= Width)) {
 				continue;
 			};
-			if (Occupied(__x, __y)) {
-				continue;
-			};
-			if (((_cells[__y, __x].Type >= PConst.TType_Desert) && 
-				 (_cells[__y, __x].Type <= PConst.TType_Marsh)) ||
-				 (_cells[__y, __x].Type == PConst.TType_Plain)) {
-					ret.X = __x;
-					ret.Y = __y;
-					return ret;
+			if (!_cells[__y, __x].Occupied && _cells[__y, __x].Passable()) {
+				ret.X = __x;
+				ret.Y = __y;
+				return ret;
 			};
 		} while (__counter-- > 0);
 		return ret;
@@ -130,8 +126,7 @@ public class PField {
 				};
 				HexTile __t = _cells[__nx.Y, __nx.X]; // tile
 				PFPoint __nxfp = __m[__nx.Y, __nx.X]; // next frontier point
-				if (!__t.Occupied && 
-					(((__t.Type >= PConst.TType_Desert) && (__t.Type <= PConst.TType_Marsh)) || (__t.Type == PConst.TType_Plain))) {
+				if (!__t.Occupied && __t.Passable()) {
 					int __c = __curr.cost + 1; // cost; 1 is a cost to move 
 					if ((__nxfp.cost == -1) || (__c <  __nxfp.cost)) {
 						__nxfp.cost = __c;

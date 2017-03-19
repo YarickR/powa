@@ -12,18 +12,18 @@ public class Lobby : MonoBehaviour {
 	
 	}
 
-	public void CreateMatch() {
+	public void CreateFight() {
 		GCTX ctx = GCTX.Instance;
-		ctx.CreateMatch();
+		ctx.CreateFight();
 	}
 
-	public void JoinMatch(int matchId) {
+	public void JoinFight(int fightId) {
 		GCTX ctx = GCTX.Instance;
-		ctx.JoinMatch(matchId);
+		ctx.JoinFight(fightId);
 	}
 
-	public void RefreshMatchList() {
+	public void RefreshFightList() {
 		GCTX ctx = GCTX.Instance;
-		ctx.RefreshMatchList();
+		ctx.RefreshFightList();
 	}
 }
