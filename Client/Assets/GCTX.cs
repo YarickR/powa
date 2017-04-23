@@ -50,7 +50,7 @@ public class GCTX : Singleton<GCTX> {
 		_longPollCoro = null;
 		_lastMsgId = 0;
 		_lastCmdId = 0;
-		Camera __c = GameObject.Find("EyeSocket/Eye").GetComponent<Camera>();
+		Camera __c = GameObject.Find("Eye").GetComponent<Camera>();
 		_lobbyCamPos = __c.transform.localPosition;
 		_lobbyCamRtr = __c.transform.localRotation;
 
@@ -115,7 +115,7 @@ public class GCTX : Singleton<GCTX> {
 			Field = new PField(fieldSize, fieldSize);
 		};
 		HexTile __tile = Resources.Load<HexTile>("HexTile");
-
+		Sprite[] __hexTiles = Resources.LoadAll<Sprite>("Terrain");
 		for (int __y = 0; __y < Field.Height; __y++) {
 			for (int __x = 0; __x < Field.Width; __x++) {
 				
@@ -127,15 +127,32 @@ public class GCTX : Singleton<GCTX> {
 				__t.Y = __y;
 				__t.Type = Convert.ToInt32(__ts, 16);
 				__t.Occupied = !__t.Passable();
+				int __tidx = UnityEngine.Random.Range(4, 15);
+				if (__tidx > 11) {
+					__tidx += 16;
+				};
+				__t.GetComponent<SpriteRenderer>().sprite = __hexTiles[__tidx];
 				Field.Set(__x, __y, __t);
 			};
 		};
 
-		Sprite[] __hexTiles = Resources.LoadAll<Sprite>("Terrain");
+
 		for (int __y = 0; __y < Field.Height; __y++) {
 			for (int __x = 0; __x < Field.Width; __x++) {
+				
 				HexTile __t = Field.Get(__x, __y);
-				__t.GetComponent<SpriteRenderer> ().sprite = __hexTiles [(__t.Type * 4) + UnityEngine.Random.Range(0, 4)];
+				if (__t.Type != PConst.TType_Ground) {
+					//GCTX.Log("Loading " + "Trees/Prefabs/" + PField.Obstacles[__t.Type]);
+					GameObject __obs = Resources.Load<GameObject>("Trees/Prefabs/" + PField.Obstacles[__t.Type]);
+					if (__obs) {
+						Mesh __om = __obs.GetComponent<MeshFilter>().sharedMesh;
+        				Bounds __omb = __om.bounds;
+						Vector3 __v = new Vector3(Vehicle.rect2hexX(__x, __y), 0 - __omb.min.y , Vehicle.rect2hexY(__x, __y));
+						Instantiate(__obs, __v, Quaternion.Euler(0, UnityEngine.Random.Range(0f,350f), 0));
+					} else {
+						GCTX.Log("Loading " + "Trees/Prefabs/" + PField.Obstacles[__t.Type] + " failed");
+					}
+ 				};
 			};
 		};
 	}
@@ -150,25 +167,20 @@ public class GCTX : Singleton<GCTX> {
 			Field.Cleanup();
 			Field = null;
 		}; // Let GC do the rest
-		Camera __c = GameObject.Find("EyeSocket/Eye").GetComponent<Camera>();
+		Camera __c = GameObject.Find("Eye").GetComponent<Camera>();
 		__c.transform.localPosition = _lobbyCamPos;
 		__c.transform.localRotation = _lobbyCamRtr;
 	}
 
 
 	public void SetupCamera(int playerPos) {
-		Camera __c = GameObject.Find("EyeSocket/Eye").GetComponent<Camera>();
-		Light __l = GameObject.Find("EyeSocket/Light").GetComponent<Light>();
+		Camera __c = GameObject.Find("Eye").GetComponent<Camera>();
 		if (playerPos % 2 != 0) {
-			__c.transform.Translate(new Vector3(0, 0, 55));
-			__c.transform.eulerAngles = new Vector3(60, 180, 0 );
-			__l.transform.Translate(new Vector3(0, 0, 55));
-			__l.transform.eulerAngles = new Vector3(60, 180, 0 );
+			__c.transform.position = new Vector3(15, 73, 38);
+			__c.transform.eulerAngles = new Vector3(110, 00, 180);
 		} else {
-			__c.transform.Translate(new Vector3(0, 0, -25));
-			__c.transform.eulerAngles = new Vector3(60, 0, 0);
-			__l.transform.Translate(new Vector3(0, 0, -25));
-			__l.transform.eulerAngles = new Vector3(60, 0, 0);
+			__c.transform.position = new Vector3(15, 73, -17);
+			__c.transform.eulerAngles = new Vector3(70, 0, 0);
 		};
 	}
 
@@ -218,7 +230,7 @@ public class GCTX : Singleton<GCTX> {
 			};
 			string __pfName = (__player.PlayerId % 2) == 0 ? __prefabNames[__vType] + "Blue" : __prefabNames[__vType] + "Red"; 
 			GameObject __prefab = Resources.Load<GameObject>(__pfName);
-			GameObject __vh = (GameObject)Instantiate(__prefab, new Vector3(0, 0, 0), Quaternion.identity); 
+			GameObject __vh = (GameObject)Instantiate(__prefab); 
 			Vehicle __vhl = __vh.GetComponent<Vehicle>();
 			foreach (PropertyInfo __prop in __props) {
 				if (__v[__prop.Name] != null) {
@@ -259,6 +271,10 @@ public class GCTX : Singleton<GCTX> {
 		vh.ShowVehicleInfo();
 		vh.AttackMode = false;
 		ToggleAttack(false);
+		int __quadrant = vh.X < (Field.Width / 2) ? 0 : 1;
+		__quadrant += vh.Y < (Field.Height / 2) ? 0 : 2;
+
+
 	}
 
 	public void ToggleAttack(bool on) {
@@ -474,7 +490,7 @@ public class GCTX : Singleton<GCTX> {
 		FightCmd(__cmd.ToJSON(0));
 	}
 
-	public void Send_VEHICLE_ATTACK(Vehicle vh, Vehicle target, int tgtX, int tgtY) {
+	public void Send_VEHICLE_ATTACK(Vehicle vh, Vehicle target, int tgtX, int tgtY, List<PDamage> dmgList) {
 		JSONClass __cmd = new JSONClass();
 		// By definition this is sent by the user
 		User.EOMTS = UnityEngine.Time.time;
@@ -484,6 +500,13 @@ public class GCTX : Singleton<GCTX> {
 		__cmd.Add("tpid", new JSONData(target != null ? (int)target.PlayerId : (int)0));
 		__cmd.Add("tvid", new JSONData(target != null ? (int)target.Id : (int)0));
 		__cmd.Add("target", new JSONData(System.String.Format("{0:X2}{1:X2}", tgtX, tgtY)));
+		JSONClass __dmgs = new JSONClass();
+		dmgList.ForEach(delegate (PDamage d) { 
+			JSONClass __dmgItem = new JSONClass();
+			__dmgItem.Add("dvid", new JSONData((int)d.Vhcl.Id));
+			__dmgItem.Add("dmg", new JSONData((int)d.Damage));
+			__dmgs.Add("dmgl", __dmgItem);
+		});
 		FightCmd(__cmd.ToJSON(0));
 	}
 

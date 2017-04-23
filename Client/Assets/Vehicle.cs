@@ -5,6 +5,11 @@ using System.Collections.Generic;
 using UnityEngine.UI;
 using SimpleJSON;
 
+public struct PDamage {
+	public Vehicle Vhcl;
+	public int Damage;
+}
+
 public class Vehicle : MonoBehaviour {
 	public GameObject Projectile;
 	public GameObject OVHStats;
@@ -84,15 +89,12 @@ public class Vehicle : MonoBehaviour {
 			_allMaterials[__i] = __m.material;
 			_allMaterials[__i].EnableKeyword("_EMISSION");
 			_matEmiColors[__i] = _allMaterials[__i].GetColor("_EmissionColor");
-			_matEmiColors[__i].r *= 2.5f;
-			_matEmiColors[__i].g *= 2.5f;
-			_matEmiColors[__i].b *= 2.5f;
 			__i++;
 		};
 		_flashStopTS = 0;
 		Flash(0.5f, new Color(0.7f, 0.7f, 0.7f, 0.7f));
 		GCTX ctx = GCTX.Instance;
-		GameObject __c = GameObject.Find("EyeSocket/Eye");
+		GameObject __c = GameObject.Find("Eye");
 		_eye = __c.GetComponent<Camera>();
 		if (PlayerId == ctx.User.GlobalId) {
 			_ovh = Instantiate(OVHStats) as GameObject;
@@ -110,6 +112,7 @@ public class Vehicle : MonoBehaviour {
 			if (_renderer == null) {
 				GCTX.Log("No renderer for this object");
 			} else {
+				GCTX.Log(gameObject.name + " bounds: center " + _renderer.bounds.center.ToString("F2") + ", min: " + _renderer.bounds.min.ToString("F2") + ", max:" + _renderer.bounds.max.ToString("F2"));
 				_bbCorners = new Vector3[8];
 				for (__i = 0 ; __i < 8 ; __i++) {
 					_bbCorners[__i] = new Vector3(0, 0, 0);
@@ -194,8 +197,11 @@ public class Vehicle : MonoBehaviour {
 
 		GCTX ctx = GCTX.Instance;
 		ctx.Field.Get(X, Y).Occupied = false;
-		transform.position = new Vector3(rect2hexX(newX, newY), (float)0.01, rect2hexY(newX, newY));
-		transform.rotation = Quaternion.identity;
+
+		Vector3 __np = new Vector3(rect2hexX(newX, newY), transform.position.y, rect2hexY(newX, newY));
+		Vector3 __diff = new Vector3(__np.x - transform.position.x, 0, __np.z - transform.position.z);
+		transform.position = __np;
+		transform.rotation = Quaternion.FromToRotation(Vector3.back, __diff); // FIXME : this is due to models being oriented backwards
 		ctx.Field.Get(newX, newY).Occupied = true;
 		X = newX;
 		Y = newY;
@@ -241,9 +247,39 @@ public class Vehicle : MonoBehaviour {
 		
 	}
 
+	List<PDamage> GetBulletDamageList(Bullet b) {
+		GCTX ctx = GCTX.Instance;
+		List<PDamage> __ret = new List<PDamage>();
+		if (b.Type == PConst.BType_Cannon) {
+			Vector3 __v = new Vector3(rect2hexX(X, Y), 1, rect2hexY(X, Y));
+			Vector3 __t = new Vector3(rect2hexX(b.Target.X, b.Target.Y), 1, rect2hexY(b.Target.X, b.Target.Y));
+			RaycastHit __obs;
+			if (!Physics.Linecast(__v, __t, out __obs)) {
+				__ret.Add(new PDamage { Vhcl = b.Target, Damage = b.Damage });
+				b.Target.DamageVehicle(b.Damage, false);
+			} else {
+				GCTX.Log("there was an obstacle - " + __obs.collider.gameObject.name);
+			};
+		} else {
+			ctx.Players.ForEach(delegate(PPlayer p) {
+				p.Units.ForEach(delegate(Vehicle v) {
+					int __dX = b.TargetX > v.X ? b.TargetX - v.X : v.X - b.TargetX;
+					int __dY = b.TargetY > v.Y ? b.TargetY - v.Y : v.Y - b.TargetY;
+					if ((__dX <= b.Radius) && (__dY <= b.Radius)) {
+						int __dmg = Math.Max(b.Radius - __dX, b.Radius - __dY);
+						__ret.Add(new PDamage { Vhcl = v, Damage = __dmg});
+						v.DamageVehicle(__dmg, false);
+					};	
+				});
+			});
+		};
+		return  __ret;
+	}
+
 	public bool Shoot(int tgtX, int tgtY, Vehicle vh, JSONClass cmd) {
 		GCTX ctx = GCTX.Instance;
 		GCTX.Log("Shoot");
+		List<PDamage> __dmgList;
 		if ((Armor <= 0) || (Time < ShotTU) || !ctx.HisMoveNow(PlayerId)) {
 			return false;
 		};
@@ -288,11 +324,13 @@ public class Vehicle : MonoBehaviour {
 			__f *= 1;						
 			__b.Type = PConst.BType_Cannon;
 		};
+		__dmgList = GetBulletDamageList(__b);
+		__b.DamageList = __dmgList;
 		__rb.AddForce(__t * __f, ForceMode.Impulse);
 		Flash(0.1f, new Color(0.5f,0.5f,0.5f,0.2f));
 		Time -= ShotTU;
 		if (PlayerId == ctx.User.GlobalId) {
-			ctx.Send_VEHICLE_ATTACK(this, vh, tgtX, tgtY);
+			ctx.Send_VEHICLE_ATTACK(this, vh, tgtX, tgtY, __dmgList);
 		};
 		if (ctx.SelectedVehicle.Id == Id) {
 			ShowVehicleInfo();
@@ -304,23 +342,29 @@ public class Vehicle : MonoBehaviour {
 		return true;
 	}
 
-	public void DamageVehicle(int dmg) {
-		if (dmg <= 0) {
+	public void DamageVehicle(int dmg, bool fake = false) {
+		if (dmg < 0) {
 			return;
 		};
 		GCTX ctx = GCTX.Instance;
-		Armor = Math.Max(0, Armor - dmg);
-		GCTX.Log("Dealing " + dmg + " units of damage");
+		if (!fake) {
+			Armor = Math.Max(0, Armor - dmg);
+			GCTX.Log("Dealing " + dmg + " units of damage");
+		};
 		if (Armor == 0) {
-			for (int __i = 0; __i < _matEmiColors.GetLength(0); __i++) {
-				_matEmiColors[__i].r /= 3;
-				_matEmiColors[__i].g /= 3;
-				_matEmiColors[__i].b /= 3;
+			if (fake) {
+				for (int __i = 0; __i < _matEmiColors.GetLength(0); __i++) {
+					_matEmiColors[__i].r /= 3;
+					_matEmiColors[__i].g /= 3;
+					_matEmiColors[__i].b /= 3;
+				};
 			};
 			Time = 0;
 		};
-		Flash(0.1f, new Color(0.5f,0,0,0.2f));
-		ShowUnitStats();
+		if (fake) { 
+			Flash(0.1f, new Color(0.5f,0,0,0.2f));
+			ShowUnitStats();
+		};
 	}
 
 	void OnGUI() {

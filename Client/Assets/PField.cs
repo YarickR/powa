@@ -27,6 +27,20 @@ public class PField {
 	public int Width { get; private set; }
 
 	private HexTile[,] _cells ;
+	public static readonly string[] Obstacles = {
+		"Empty",
+		"tree1",
+		"tree2",
+		"tree3",
+		"tree4",
+		"tree5",
+		"tree6",
+		"tree7",
+		"tree8",
+		"tree9",
+		"tree10"
+	};
+
 	public PField(int newWidth, int newHeight) {
 		Height = newWidth;
 		Width = newWidth;

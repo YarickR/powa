@@ -143,7 +143,6 @@ public class HexTile : MonoBehaviour {
 	}
 
 	public bool Passable() {
-		return (((Type >= PConst.TType_Desert) && (Type <= PConst.TType_Marsh)) || 
-				(Type == PConst.TType_Plain));
+		return Type == PConst.TType_Ground;
 	}
 }

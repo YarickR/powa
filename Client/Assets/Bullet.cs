@@ -13,6 +13,7 @@ public class Bullet : MonoBehaviour {
 	public int Type { get; set; }
 	public int Damage { get; set; }
 	public int Radius { get; set; }
+	public List<PDamage> DamageList;
 	// Use this for initialization
 	void Start () {
 	
@@ -37,8 +38,8 @@ public class Bullet : MonoBehaviour {
 		};
 		if (Type == PConst.BType_Cannon) {
 			HexTile __tl = ctx.Field.Get(__x, __y);
-			if (__tl.Type == PConst.TType_Mountain) {
-				GCTX.Log("Destroying due to mountain hit - " + __x + ":" + __y);
+			if (__tl.Type != PConst.TType_Ground) {
+				GCTX.Log("Destroying due to obstacle hit - " + __x + ":" + __y);
 				Destroy(this.gameObject);
 				return;
 			};
@@ -51,20 +52,9 @@ public class Bullet : MonoBehaviour {
 	}
 
 	void Boom () {
-		GCTX ctx = GCTX.Instance;
-		if (Type == PConst.BType_Cannon) {
-			Target.DamageVehicle(Damage);
-		} else {
-			ctx.Players.ForEach(delegate(PPlayer p) {
-				p.Units.ForEach(delegate(Vehicle v) {
-					int __dX = TargetX > v.X ? TargetX - v.X : v.X - TargetX;
-					int __dY = TargetY > v.Y ? TargetY - v.Y : v.Y - TargetY;
-					if ((__dX <= Radius) && (__dY <= Radius)) {
-						v.DamageVehicle(Math.Max(Radius - __dX, Radius - __dY));
-					};	
-				});
-			});
-		};
+		DamageList.ForEach(delegate (PDamage d) { 
+			d.Vhcl.DamageVehicle(d.Damage, true);
+		});
 	}
 
 	void OnDestroy  () {

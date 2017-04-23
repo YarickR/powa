@@ -1,11 +1,11 @@
+﻿
 Microsoft Visual Studio Solution File, Format Version 11.00
-# Visual Studio 2008
-
-Project("{577D7068-826D-E925-EA2A-EC01DBADF5E4}") = "Client", "Assembly-CSharp.csproj", "{12F44184-A422-5F27-22E6-507969043F15}"
+# Visual Studio 2010
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Client", "Assembly-CSharp.csproj", "{12F44184-A422-5F27-22E6-507969043F15}"
 EndProject
-Project("{577D7068-826D-E925-EA2A-EC01DBADF5E4}") = "Client", "Assembly-CSharp-Editor.csproj", "{5544F79C-5306-909F-C855-53D6959D5DFD}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Client", "Assembly-CSharp-Editor.csproj", "{5544F79C-5306-909F-C855-53D6959D5DFD}"
 EndProject
-Project("{577D7068-826D-E925-EA2A-EC01DBADF5E4}") = "Client", "Assembly-UnityScript.unityproj", "{6F6431C8-D3A8-6F64-A382-5D8EFB5443F7}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Client", "Assembly-UnityScript.unityproj", "{6F6431C8-D3A8-6F64-A382-5D8EFB5443F7}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
