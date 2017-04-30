@@ -505,8 +505,9 @@ public class GCTX : Singleton<GCTX> {
 			JSONClass __dmgItem = new JSONClass();
 			__dmgItem.Add("dvid", new JSONData((int)d.Vhcl.Id));
 			__dmgItem.Add("dmg", new JSONData((int)d.Damage));
-			__dmgs.Add("dmgl", __dmgItem);
+			__dmgs.Add("dmgi", __dmgItem);
 		});
+		__cmd.Add("dmgl", __dmgs);
 		FightCmd(__cmd.ToJSON(0));
 	}
 

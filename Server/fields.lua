@@ -79,4 +79,13 @@ PlayerMsgId = {
     MsgId       = 2
 }
 
+FightResults = {
+    FightId     = 1,
+    PlayerId    = 2,
+    Place       = 3,
+    Kills       = 4,
+    Deaths      = 5, 
+    LastKill    = 6,
+    LastDeath   = 7
+}
 

@@ -55,6 +55,11 @@ local function bootstrap()
     drop_space('fight_vehicles')
     local fight_vehicles = box.schema.space.create('fight_vehicles')
     fight_vehicles:create_index('primary', { parts = { 1, 'NUM' } })
+    log.info('fight_results')
+    drop_space('fight_results')
+    local fight_results = box.schema.space.create('fight_results')
+    fight_results:create_index('fight_player', { parts =  { 1, 'NUM', 2, 'NUM'}, unique = true}) -- fight id + player id 
+ 
 end
 local function fill_vehicle_classes() 
 -- PConst.VType_Light: MaxTime= 10; MaxDamage = 2; MaxArmor = 4; Price = 2;    ShotTU = 2; MaxDistance = 4; break;

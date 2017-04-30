@@ -100,28 +100,6 @@ local function decodeURI(s)
     return s
 end
 
-local function array_to_obj(a, ft)  -- a - array, ft - table with field ids. Somewhat expensive ( O(N*M) ), need to check luafun
-    local __ret = {}
-    for __ai, __av in ipairs(a) do
-        for __fi, __fv in pairs(ft) do
-            if __ai == __fv then
-                __ret[__fi] = __av
-                break
-            end
-        end
-    end
-    return __ret
-end
-
-local function obj_to_array(o, ft) -- reverse to array_to_obj
-    local __ret = {}
-    for __oi, __ov in pairs(o) do
-        if ft[__oi] then
-            __ret[ft[__oi]] = __ov
-        end
-   end 
-end
-
 local function queue_to_player(playerId, data) 
     local __m = msgpack.encode(data)
     local __pmt = box.space.player_msgids:update({playerId}, {{'+', PlayerMsgId.MsgId, 1}})
@@ -142,15 +120,7 @@ local function get_player_id(args)
     if (args["name"] == nil) then 
         return {}
     end
---    Id          = 1,
---    Name        = 2,
---    Ctime       = 3,
---    FightId     = 4,
---    Wins        = 5,
---    Losses      = 6,
---    Mtime       = 7,
---    Money       = 8,
---    EndTurn     = 9
+
     local __p = box.space.players:auto_increment({args["name"], math.floor(clock.time()), 0, 0, 0, math.floor(clock.time()), 50, 0 })
     box.space.player_msgids:insert({__p[Player.Id], 0})
     local __vc = box.space.vehicle_classes:select({})   
@@ -218,9 +188,13 @@ local function create_fight(args)
     return { id = __t[Fight.Id] };
 end
 
-local function end_fight(fightId, winners, losers)
-    box.space.fights:update(fightId, {{'=', Fight.State, FIGHT_STATE.FINISHED}, {'=', Fight.Mtime, math.floor(clock.time()) }})
-    local __fightPlayers = box.space.fight_players:get({fightId})
+local function update_fight_results(fightId) 
+
+end
+
+local function end_fight(fight, winners, losers)
+    box.space.fights:update(fight[Fight.Id], {{'=', Fight.State, FIGHT_STATE.FINISHED}, {'=', Fight.Mtime, math.floor(clock.time()) }})
+    local __fightPlayers = box.space.fight_players:get({fight[Fight.Id]})
     if __fightPlayers then
         local __i, __playerId 
         local __data = { ["cmd"] = CMDS.END_FIGHT } 
@@ -232,29 +206,23 @@ local function end_fight(fightId, winners, losers)
             local __msgId = queue_to_player(__playerId,  __data)
             wakeup_player(__playerId, __msgId);
         end
+        update_fight_results(fight[Fight.Id])
     end
 end
 
 local function leave_fight(fightId, playerId) 
     local __fightPlayers = box.space.fight_players:get({fightId})
-    if __fightPlayers then
-        local __i, __playerId 
-        for __i, __playerId in pairs(__fightPlayers) do
-            if __i > 1  then
-                if __playerId == playerId then -- hId, fight[1]...n - playerIds
-                    local __fight = box.space.fights:get({fightId})
-                    if  __fight then
-                        if __fight[Fight.State] == FIGHT_STATE.RUNNING then -- leaving an already running fight
-                            end_fight(fightId, {} , { playerId })
-                        elseif __fight[Fight.State] == FIGHT_STATE.READY then
-                            box.space.fights:update(fightId, {{'=', Fight.State, FIGHT_STATE.PREPARING}})
-                            box.space.fight_players:update( fightId, {{ '#', __i, 1}})
-                        elseif __fight[Fight.State] == FIGHT_STATE.PREPARING then
-                            box.space.fight_players:update( fightId, {{ '#', __i, 1}})
-                        end
-                    end
-                    break
-                end
+    local __fight = box.space.fights:get({fightId})
+    if __fightPlayers and __fight then
+        local __i = __fightPlayers:find(2, playerId);        
+        if __i > 1  then
+            if __fight[Fight.State] == FIGHT_STATE.RUNNING then -- leaving an already running fight
+                end_fight(__fight, {} , { playerId })
+            elseif __fight[Fight.State] == FIGHT_STATE.READY then
+                box.space.fights:update(fightId, {{'=', Fight.State, FIGHT_STATE.PREPARING}})
+                box.space.fight_players:update( fightId, {{ '#', __i, 1}})
+            elseif __fight[Fight.State] == FIGHT_STATE.PREPARING then
+                box.space.fight_players:update( fightId, {{ '#', __i, 1}})
             end
         end
     end
@@ -303,8 +271,7 @@ local function find_free_cell(field, playerPos)
         __y = math.random(__bo[__minY], __bo[__maxY]);
         if not field[__y] or not field[__y][__x] then log.sinfo(table.tostring(field)) end
         if field[__y][__x]['v'] == 0 then 
-            if (((field[__y][__x]['t'] >= PConst.TType_Desert) and (field[__y][__x]['t'] <= PConst.TType_Marsh)) or 
-                 (field[__y][__x]['t'] == PConst.TType_Plain)) then
+            if (field[__y][__x]['t'] == PConst.TType_Ground) then
                 return __x, __y
             end
         end   
@@ -319,17 +286,25 @@ local function generate_field()
     local __t = 0
     for  __h = 0, PConst.Map_Size - 1 do 
         __f[__h] = {}
-        for __w = 0, PConst.Map_Size - 1 do
-            local __t
-            if      math.random(0, 100) < 30 then
-                __t = math.random(PConst.TType_Desert, PConst.TType_Marsh + 1)
-            elseif  math.random(0, 100) < 20 then 
-                __t = PConst.TType_Mountain
-            else
-                __t = PConst.TType_Plain
-            end
-           __f[__h][__w] = { ['t'] = __t, ['v'] = 0 }
+        for __w = 0, PConst.Map_Size - 1 do        
+           __f[__h][__w] = { ['t'] = PConst.TType_Ground, ['v'] = 0 }
         end
+    end
+    for __c = 0, 10 do
+        local __clean = true
+        local __x = 0
+        local __y = 0
+        repeat
+            __clean = true
+            __x = math.random(1, PConst.Map_Size - 2) 
+            __y = math.random(1, PConst.Map_Size - 2)
+            for __yoff = -1,1 do
+                for __xoff = -1, 1 do
+                    __clean = __clean and (__f[__y + __yoff][__x + __xoff]['t'] == PConst.TType_Ground)
+                end
+            end
+        until __clean ;
+        __f[__y][__x]['t'] = math.random(1, 10);
     end
     return __f
 end
@@ -338,11 +313,9 @@ local function field_to_string(f)
     local __fs = "" 
     local __h
     local __w
-    local __r
-    local __c -- height, width, row, cell
-    for __h, __r in pairs(f) do 
-        for __w, __c in pairs(__r) do
-            __fs = __fs .. string.format("%02X", __c['t'])
+    for  __h = 0, PConst.Map_Size - 1 do 
+        for __w = 0, PConst.Map_Size - 1 do
+            __fs = __fs .. string.format("%02X", f[__h][__w]['t'])
         end
     end
     return __fs
@@ -364,12 +337,18 @@ local function setup_fight(fight, players)
                 local __x, __y = find_free_cell(__f, __playerPos);
                 if __x ~= -1 and __y ~= -1 then
                     __f[__y][ __x]['v'] = __v[Vehicle.Type]
-                    box.space.player_vehicles:update(__v[Vehicle.Id], {{'=', Vehicle.X, __x}, {'=', Vehicle.Y, __y}, {'=', Vehicle.Armor, __v[Vehicle.MaxArmor]}})
+                    box.space.player_vehicles:update(__v[Vehicle.Id], 
+                           {{'=', Vehicle.X, __x}, 
+                            {'=', Vehicle.Y, __y}, 
+                            {'=', Vehicle.Armor, __v[Vehicle.MaxArmor]},
+                            {'=', Vehicle.Time,  __v[Vehicle.MaxTime]}
+                           })
                     box.space.fight_vehicles:update(fight[Fight.Id], {{'!', -1, __v[Vehicle.Id]}});
                 else
                     log.warn("Cannot find free cell for vehicle #" .. __v[Vehicle.Id] .. " for player at position " .. __playerPos)
                 end
             end
+            box.space.fight_results:insert({fight[Fight.Id], __playerId, 0, 0, 0, 0, 0})
             __playerPos = __playerPos  + 1
         end
     end
@@ -414,30 +393,44 @@ local function get_fight_data(args)
     return __ret;
 end
 
+local function get_fight_vehicles_t(fightId)
+    local __fv = box.space.fight_vehicles:get({fightId}) 
+    local __ret = {}
+    if not __fv then 
+        return __ret
+    end
+    for __i = 2, #__fv do
+        table.insert(__ret, box.space.player_vehicles:get({__fv[__i]}):totable())
+    end
+    return __ret;
+end
+
 local function get_fight_vehicles(args)
+    local __ret = { }
     args = args["args"]
     local __playerId = args["player_id"] and tonumber(args["player_id"]) or 0
     if __playerId == 0 then 
-        return { id = 0 }
+        return __ret
     end
     local __player = box.space.players:get({__playerId})
     local __fightId = __player and __player[Player.FightId] or 0
     local __fightVehicles = __fightId > 0 and box.space.fight_vehicles:get({__fightId}) or nil
     if not __player or not __fightVehicles then
-        return 0
+        return __ret
     end
-    local __ret = {}
     for __i = 2, #__fightVehicles do
-        local __vhId = __fightVehicles[__i]
-        local __vh = box.space.player_vehicles:get({__vhId});
-        local __vho = array_to_obj(__vh, Vehicle)
-        table.insert(__ret, __vho)
+        table.insert(__ret, box.space.player_vehicles:get({__fightVehicles[__i]}):totable())
     end
     return __ret;
 end
 
 local function next_turn(fight, fightPlayers)
     box.space.fights:update(fight[Fight.Id], {{'=', Fight.Mtime, math.floor(clock.time())},{'=', Fight.ActivePlayer, 0}, {'=', Fight.EndTurn, 0}})
+    local __fv = box.space.fight_vehicles:get({fight[Fight.Id]}):totable();
+    for __i = 2, #__fv do
+        local __v = box.space.player_vehicles:get({__fv[__i]})
+        box.space.player_vehicles:update(__fv[__i], {{'=', Vehicle.Time, __v[Vehicle.MaxTime]}})
+    end
     local __data = { ["cmd"] = CMDS.NEXT_TURN, ["active_player"] = 0 } 
     for __i = 2, #fightPlayers do
         box.space.players:update(fightPlayers[__i], {{'=', Player.EndTurn, 0}})
@@ -539,6 +532,10 @@ local function fight_cmd(args)
     local __fightId = __player[Player.FightId];
     local __fightPlayers  = box.space.fight_players:get({__fightId})
     local __fight = box.space.fights:get({__fightId})
+    if not __fight or __fight[Fight.State] ~= FIGHT_STATE.RUNNING then
+        log.sinfo("can't find (running) fight #" .. __fightId)
+        return 0
+    end
     local __playerPos = -1
     for __i = 2, #__fightPlayers do
         if __fightPlayers[__i] == __playerId then
@@ -552,9 +549,20 @@ local function fight_cmd(args)
             return 0
         end
     end
-    -- ok, player is alive and sending something
+    
     box.space.fights:update(__fightId, {{'=', Fight.Timeouts, 0}})
     box.space.players:update(__playerId, {{'=', Player.EndTurn, 0}})
+
+    -- ok, player is alive and sending something
+    -- let's handle corner cases
+    if FIGHT_CMD_DISPATCHER[__data["cmd"]] then
+        if not FIGHT_CMD_DISPATCHER[__data["cmd"]](__data,__fight, __player) then
+            log.sinfo("Fight command handler returns false, skipping the move")
+            pass_the_move(__fight)
+            return 0
+        end
+    end
+
     for __i = 2, #__fightPlayers do
         if __fightPlayers[__i] ~= __playerId then
             local __msgId = queue_to_player(__fightPlayers[__i], __data)
@@ -598,6 +606,22 @@ local function fight_player_timeout(fight, fightPlayers, playerPos)
     return 0
 end
 
+local function fight_has_winners(fight) 
+    local __fvl = get_fight_vehicles_t(fight[Fight.Id])
+    local __avc = {} -- active vehicle count , per player
+    
+    for __i, __fv in __fvl do
+        if __fv[Vehicle.Armor] > 0 then
+            __avc[__fv[Vehicle.PlayerId]] = __avc[__fv[Vehicle.PlayerId]] and __avc[__fv[Vehicle.PlayerId]] + 1 or 1
+        end
+    end
+
+    local  __winners = {},  __losers = {}
+    for __pId, __cnt in pairs(__avc) do
+        table.insert(__cnt > 0 and __winners or __losers, __pId)
+    end
+    return __winners, __losers
+end
 local function next_turn(fight, fightPlayers)
     box.space.fights:update(fight[Fight.Id], {{'=', Fight.Mtime, math.floor(clock.time())},{'=', Fight.ActivePlayer, 0}, {'=', Fight.EndTurn, 0}})
     
@@ -614,6 +638,7 @@ local function fightd_main()
     FIGHTD_PID = fiber.self():id()
    -- main fightd loop goes here
     log.sinfo("FightD fiber started with PID " .. FIGHTD_PID)
+
     while true do
         local __readyFights = box.space.fights.index.fight_state:select({FIGHT_STATE.READY}, { iterator = 'EQ'})
         if #__readyFights > 0 then
@@ -634,38 +659,117 @@ local function fightd_main()
             
             if  fight_player_timeout(__fight, __fightPlayers, __fight[Fight.ActivePlayer]) == 1 then
                 log.sinfo("Finishing fight")
-                end_fight(__fight[Fight.Id], {}, {}) -- no winners, no losers in timeout fight 
+                end_fight(__fight, {}, {}) -- no winners, no losers in timeout fight 
             end
+          end
+          local __winners, __losers = fight_has_winners(__fight)
+          if #__winners == 1 and #__losers > 0 then
+            end_fight(__fight, __winners, __losers)
           end
         end
         fiber.sleep(0.1)
-        fiber.testcancel()
+        if (FIGHTD_PID == 0) then
+            break
+        end
     end
+    log.sinfo("FightD fiber with pid " .. fiber.self():id() .. " terminates")
 end
 
 local function deinit()
     if FIGHTD_PID and (FIGHTD_PID > 0) then
         local __fightdFiber = fiber.find(FIGHTD_PID)
         if __fightdFiber ~= nil  then
-            log.sinfo("Stopping thread " .. __fightdFiber:id() )
-            local __status, __err = pcall(__fightdFiber:cancel())
-            if not __status then
-                log.sinfo("Error '".. __err .. "' stopping fightd thread ")
-            else 
-                log.sinfo("Successfully stopped fightd thread")
-            end
+            log.sinfo("Stopping thread " .. __fightdFiber:id() .. ", currently in the " .. __fightdFiber.status() .. " state")
+            FIGHTD_PID = 0
+            fiber.sleep(1)
         else 
             log.sinfo("Can't find fightd fiber #" .. FIGHTD_PID)
         end
     end
+    log.sinfo("CLosing player channels")
     for __i, __c in ipairs(PLAYER_CHANNELS) do
         log.sinfo("Closing another channel")
         __c:close()
     end
+    log.sinfo("Clearing requirements")
+    package.loaded["b64"] = nil
+    package.loaded["const"] = nil
+    package.loaded["fields"] = nil
     log.sinfo("Deinit complete")
 end
 
+local function VEHICLE_SHOOT_handler(cmdData, fight, player)
+--      { "cmd": 5, "player": 33, "vehicle": 131, "tpid": 34, "tvid": 136, "target": "0706", "dmgl": { "dmgi": { "dvid": 136, "dmg": 4}}}
+    local __vh = box.space.player_vehicles:get({cmdData["vehicle"]})
+    if (__vh[Vehicle.Time] < __vh[Vehicle.ShotTU]) then
+        log.sinfo("Vehicle #" .. cmdData["vehicle"] .. " has not enough time units to shoot , needs " .. __vh[Vehicle.ShotTU] .. ", has " .. __vh[Vehicle.Time])
+        return false
+    else
+        box.space.player_vehicles:update(cmdData["vehicle"], {{'-', Vehicle.Time, __vh[Vehicle.ShotTU]}})
+    end
+    for __i, __dmgI in ipairs(cmdData["dmgl"]) do
+        local __veh = box.space.player_vehicles:get({__dmgI["dvid"]})
+        if not __veh then
+            log.sinfo("can't find vehicle " .. __dmgI["dvid"])
+            return false
+        end
+        local __newArmor = math.max(__veh[Vehicle.Armor] - __dmgI["dmg"], 0)
+        box.space.player_vehicles:update(__dmgI["dvid"], {{'=', Vehicle.Armor, __newArmor}})
+        if __newArmor == 0 then
+            box.space.fight_results:update({fight[Fight.Id], player[Player.Id]}, 
+                {{'+', FightResults.Kills, 1}, 
+                 {'=', FightResults.LastKill, math.floor(clock.time())}})
+            box.space.fight_results:update({fight[Fight.Id], __veh[Vehicle.PlayerId]}, 
+                {{'+', FightResults.Deaths, 1}, 
+                 {'=', FightResults.LastDeath, math.floor(clock.time())}})
+            update_fight_results(fight)
+        end
+    end
+    return true
+end
+
+
+local function VEHICLE_MOVE_handler(cmdData, fight, player)
+--    { "cmd": 4, "player": 33, "vehicle": 131, "path": "0A080908080807090609", "pathlen": 5}
+    local __vTuple =cmdData["vehicle"] and box.space.player_vehicles:get({cmdData["vehicle"]}) or nil
+    if not __vTuple then
+            log.sinfo(cmdData["vehicle"] and "can't find vehicle" or "missing vehicle id")
+        return false
+    end
+    local __veh = __vTuple:totable()
+    local __prevX = __veh[Vehicle.X]
+    local __prevY = __veh[Vehicle.Y]
+    
+    for __cnt = 0, (cmdData["pathlen"] - 1) do
+        local __x = tonumber(string.sub(cmdData["path"], __cnt * 4 + 1, __cnt * 4 + 2), 16)
+        local __y = tonumber(string.sub(cmdData["path"], __cnt * 4 + 3, __cnt * 4 + 4), 16)
+        if (math.abs(__x - __veh[Vehicle.X]) >= 2) or (math.abs(__y - __veh[Vehicle.Y]) >= 2 ) then
+            log.sinfo("Impossible jump from " .. __veh[Vehicle.X] .."x" .. __veh[Vehicle.Y] .. " to " .. __x .. "x" .. __y )
+            return false
+        end
+        if (__veh[Vehicle.Time] <= 0) or (__veh[Vehicle.Armor] <= 0) then
+            log.sinfo("Vehicle is out of time or is dead (" .. __veh[Vehicle.Time] .. ":" .. __veh[Vehicle.Armor] )
+            return false
+        end
+        __veh[Vehicle.X] = __x 
+        __veh[Vehicle.Y] = __y
+        __veh[Vehicle.Time] = __veh[Vehicle.Time] - 1
+    end       
+    box.space.player_vehicles:update(cmdData["vehicle"], 
+           {{'=', Vehicle.X, __veh[Vehicle.X]}, 
+            {'=', Vehicle.Y, __veh[Vehicle.Y]}, 
+            {'=', Vehicle.Time, __veh[Vehicle.Time]}
+           })
+    return true
+end
+
 MAIN_PID = fiber.self():id()
+
+FIGHT_CMD_DISPATCHER = {
+    [CMDS.VEHICLE_MOVE]  = VEHICLE_MOVE_handler,
+    [CMDS.VEHICLE_SHOOT]  = VEHICLE_SHOOT_handler
+}
+
 
 return {
     get_player_id       = get_player_id_p,

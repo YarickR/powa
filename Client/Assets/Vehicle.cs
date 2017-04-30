@@ -258,7 +258,14 @@ public class Vehicle : MonoBehaviour {
 				__ret.Add(new PDamage { Vhcl = b.Target, Damage = b.Damage });
 				b.Target.DamageVehicle(b.Damage, false);
 			} else {
-				GCTX.Log("there was an obstacle - " + __obs.collider.gameObject.name);
+				Vehicle __hitVehicle = __obs.collider.gameObject.GetComponent<Vehicle>();
+				if (!__hitVehicle) {
+					GCTX.Log("there was an obstacle - " + __obs.collider.gameObject.name);
+				} else {
+					b.Target = __hitVehicle;
+					__ret.Add(new PDamage { Vhcl = b.Target, Damage = b.Damage });
+					b.Target.DamageVehicle(b.Damage, false);
+				}
 			};
 		} else {
 			ctx.Players.ForEach(delegate(PPlayer p) {
